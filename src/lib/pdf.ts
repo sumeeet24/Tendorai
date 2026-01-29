@@ -1,5 +1,5 @@
 import { createCanvas } from '@napi-rs/canvas'
-import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs'
+import * as pdfjsLib from 'pdfjs-dist'
 
 // Convert PDF Buffer to Array of Base64 Images
 export async function convertPdfToImages(pdfBuffer: ArrayBuffer): Promise<{ pageNumber: number, base64: string }[]> {
