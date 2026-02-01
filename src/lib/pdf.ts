@@ -1,12 +1,17 @@
 import { createCanvas } from '@napi-rs/canvas'
-import * as pdfjsLib from 'pdfjs-dist'
+import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs'
+import path from 'path'
 
 // Convert PDF Buffer to Array of Base64 Images
 export async function convertPdfToImages(pdfBuffer: ArrayBuffer): Promise<{ pageNumber: number, base64: string }[]> {
+
+  // Point to standard fonts to avoid warnings and potential rendering issues
+  const standardFontDataUrl = path.join(process.cwd(), 'node_modules/pdfjs-dist/standard_fonts/')
+
   const loadingTask = pdfjsLib.getDocument({
     data: pdfBuffer,
-    // Disable worker for simpler Node setup if possible, or let it fallback
-    disableFontFace: true,
+    disableFontFace: true, // We don't need exact fonts for OCR usually, but good to have fallback
+    standardFontDataUrl
   })
 
   const pdfDocument = await loadingTask.promise
