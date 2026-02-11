@@ -2,9 +2,9 @@ import { createClient } from '@supabase/supabase-js'
 import { convertPdfToImages } from '../src/lib/pdf.js'
 import { generateJSON, generateText } from '../src/lib/gemini.js'
 import { DocumentProcessorServiceClient } from '@google-cloud/documentai'
-import { Storage } from '@google-cloud/storage'
 import path from 'path'
 import fs from 'fs'
+import os from 'os'
 
 // Initialize Supabase Admin Client
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
@@ -13,10 +13,18 @@ const supabase = createClient(supabaseUrl, supabaseServiceKey)
 
 // Initialize Google Clients
 const GOOGLE_KEY_FILE = path.resolve('service-account.json')
-if (fs.existsSync(GOOGLE_KEY_FILE)) {
+
+if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
+    console.log('Using GOOGLE_APPLICATION_CREDENTIALS from env')
+} else if (fs.existsSync(GOOGLE_KEY_FILE)) {
     process.env.GOOGLE_APPLICATION_CREDENTIALS = GOOGLE_KEY_FILE
+} else if (process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON) {
+    const tempFile = path.join(os.tmpdir(), 'gcp-service-account.json')
+    fs.writeFileSync(tempFile, process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON)
+    process.env.GOOGLE_APPLICATION_CREDENTIALS = tempFile
+    console.log('Created temporary service account file from GOOGLE_APPLICATION_CREDENTIALS_JSON')
 } else {
-    console.warn('Google Service Account JSON not found at', GOOGLE_KEY_FILE)
+    console.warn('Google Service Account credentials not found!')
 }
 
 const projectId = process.env.GOOGLE_CLOUD_PROJECT_ID || 'document-ai-2026'
@@ -24,7 +32,6 @@ const location = process.env.GOOGLE_CLOUD_REGION || 'us'
 const processorId = process.env.DOCUMENT_AI_PROCESSOR_ID
 
 const docAIClient = new DocumentProcessorServiceClient()
-const storage = new Storage({ projectId })
 
 export async function processCompanyDoc(job: any) {
     const { document_id, company_id, file_path, document_type, owner_id } = job.payload
@@ -121,11 +128,7 @@ Page Number: ${img.pageNumber}
 
 export async function processTender(job: any) {
     const { tender_id, company_id, file_path } = job.payload
-    console.log(`Processing Tender (DocAI Batch): ${tender_id}`)
-
-    const bucketName = `tender-ai-processing-${projectId}`
-    const gcsInputPath = `inputs/${tender_id}.pdf`
-    const gcsOutputPrefix = `outputs/${tender_id}/`
+    console.log(`Processing Tender (DocAI Online): ${tender_id}`)
 
     try {
         // 1. Download from Supabase
@@ -135,77 +138,49 @@ export async function processTender(job: any) {
 
         if (downloadError) throw downloadError
 
-        const buffer = Buffer.from(await fileData.arrayBuffer())
+        const arrayBuffer = await fileData.arrayBuffer()
 
-        // 2. Ensure Bucket Exists & Upload to GCS
-        const bucket = storage.bucket(bucketName)
-        const [exists] = await bucket.exists()
-        if (!exists) {
-            console.log(`Creating bucket ${bucketName}...`)
-            await bucket.create({ location })
-        }
-
-        console.log(`Uploading to GCS: gs://${bucketName}/${gcsInputPath}`)
-        await bucket.file(gcsInputPath).save(buffer)
-
-        // 3. Document AI Batch Process
-        const name = `projects/${projectId}/locations/${location}/processors/${processorId}`
-        const inputGcsUri = `gs://${bucketName}/${gcsInputPath}`
-        const outputGcsUri = `gs://${bucketName}/${gcsOutputPrefix}`
-
-        const request = {
-            name,
-            inputDocuments: {
-                gcsDocuments: {
-                    documents: [
-                        {
-                            gcsUri: inputGcsUri,
-                            mimeType: 'application/pdf'
-                        }
-                    ]
-                }
-            },
-            documentOutputConfig: {
-                gcsOutputConfig: {
-                    gcsUri: outputGcsUri
-                }
-            }
-        }
-
-        console.log('Starting Batch Processing...')
-        const [operation] = await docAIClient.batchProcessDocuments(request)
-        console.log(`Operation started: ${operation.name}`)
-
-        // Wait for completion
-        await operation.promise()
-        console.log('Batch Processing Completed.')
-
-        // 4. Download & Parse Results
-        console.log('Fetching results from GCS...')
-        const [files] = await bucket.getFiles({ prefix: gcsOutputPrefix })
+        // 2. Convert PDF to Images
+        console.log('Converting PDF to images...')
+        const images = await convertPdfToImages(arrayBuffer)
+        console.log(`Converted ${images.length} pages.`)
 
         let fullText = ''
 
-        // Document AI output is sharded JSONs
-        const jsonFiles = files.filter(f => f.name.endsWith('.json'))
+        // 3. Process each page with Document AI
+        const name = `projects/${projectId}/locations/${location}/processors/${processorId}`
 
-        // We need to sort them, but usually they contain page info.
-        // Actually, Document AI output files might be named differently but iterating them is fine.
+        // Process sequentially or in small batches
+        for (const [index, img] of images.entries()) {
+             console.log(`Processing page ${index + 1}/${images.length}...`)
+             const request = {
+                name,
+                rawDocument: {
+                    content: img.base64, // convertPdfToImages returns base64 string (jpeg)
+                    mimeType: 'image/jpeg',
+                }
+            }
 
-        for (const file of jsonFiles) {
-            const [content] = await file.download()
-            const result = JSON.parse(content.toString())
-            if (result.text) {
-                fullText += result.text
+            try {
+                const [result] = await docAIClient.processDocument(request)
+                const { document } = result
+                if (document && document.text) {
+                    fullText += document.text + '\n'
+                }
+            } catch (pageErr) {
+                console.error(`Error processing page ${index + 1}:`, pageErr)
+                // Continue with other pages
             }
         }
 
         console.log(`Extracted ${fullText.length} characters.`)
 
-        // 5. Generate Gemini Summary
+        if (!fullText) {
+             throw new Error('No text extracted from document.')
+        }
+
+        // 4. Generate Gemini Summary
         console.log('Generating Gemini Summary...')
-        // Truncate if too long? Gemini 2.0 has large context (1M tokens).
-        // 80 pages of text is fine.
 
         const summaryPrompt = `
 You are a tender analyst.
@@ -226,10 +201,7 @@ ${fullText}
             summary = 'Summary generation failed.'
         }
 
-        // 6. Update Tender Profile
-        // Using metadata column as decided (skipping migration)
-
-        // First fetch existing metadata to preserve other fields if any
+        // 5. Update Tender Profile
         const { data: currentTender } = await supabase
             .from('tender_profiles')
             .select('metadata')
@@ -247,22 +219,11 @@ ${fullText}
                     summary: summary
                 },
                 processed: true,
-                // Clear old clauses to avoid confusion? Or keep them empty.
                 clauses: []
             })
             .eq('id', tender_id)
 
         console.log('Tender Profile Updated.')
-
-        // 7. Cleanup GCS (Optional but good)
-        // Delete input and output
-        try {
-            await bucket.file(gcsInputPath).delete()
-            await bucket.deleteFiles({ prefix: gcsOutputPrefix })
-            console.log('GCS Cleanup successful.')
-        } catch (e) {
-            console.warn('GCS Cleanup failed:', e)
-        }
 
     } catch (err: any) {
         console.error('ProcessTender Failed:', err)
