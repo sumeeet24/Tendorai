@@ -5,6 +5,7 @@ import { DocumentProcessorServiceClient } from '@google-cloud/documentai'
 import { Storage } from '@google-cloud/storage'
 import path from 'path'
 import fs from 'fs'
+import { PDFDocument } from 'pdf-lib'
 
 // Initialize Supabase Admin Client
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
@@ -15,6 +16,14 @@ const supabase = createClient(supabaseUrl, supabaseServiceKey)
 const GOOGLE_KEY_FILE = path.resolve('service-account.json')
 if (fs.existsSync(GOOGLE_KEY_FILE)) {
     process.env.GOOGLE_APPLICATION_CREDENTIALS = GOOGLE_KEY_FILE
+} else if (process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON) {
+    try {
+        fs.writeFileSync(GOOGLE_KEY_FILE, process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON);
+        process.env.GOOGLE_APPLICATION_CREDENTIALS = GOOGLE_KEY_FILE
+        console.log('Created service-account.json from env var');
+    } catch (e) {
+        console.error('Failed to create service-account.json', e);
+    }
 } else {
     console.warn('Google Service Account JSON not found at', GOOGLE_KEY_FILE)
 }
@@ -121,11 +130,7 @@ Page Number: ${img.pageNumber}
 
 export async function processTender(job: any) {
     const { tender_id, company_id, file_path } = job.payload
-    console.log(`Processing Tender (DocAI Batch): ${tender_id}`)
-
-    const bucketName = `tender-ai-processing-${projectId}`
-    const gcsInputPath = `inputs/${tender_id}.pdf`
-    const gcsOutputPrefix = `outputs/${tender_id}/`
+    console.log(`Processing Tender (DocAI Online Splitting): ${tender_id}`)
 
     try {
         // 1. Download from Supabase
@@ -137,72 +142,51 @@ export async function processTender(job: any) {
 
         const buffer = Buffer.from(await fileData.arrayBuffer())
 
-        // 2. Ensure Bucket Exists & Upload to GCS
-        const bucket = storage.bucket(bucketName)
-        const [exists] = await bucket.exists()
-        if (!exists) {
-            console.log(`Creating bucket ${bucketName}...`)
-            await bucket.create({ location })
-        }
+        // 2. Split PDF and Process Online (Fallback for missing Bucket)
+        // Since the GCS bucket is missing/inaccessible, we use online processing
+        // by splitting the PDF into chunks of 15 pages (DocAI limit).
 
-        console.log(`Uploading to GCS: gs://${bucketName}/${gcsInputPath}`)
-        await bucket.file(gcsInputPath).save(buffer)
-
-        // 3. Document AI Batch Process
-        const name = `projects/${projectId}/locations/${location}/processors/${processorId}`
-        const inputGcsUri = `gs://${bucketName}/${gcsInputPath}`
-        const outputGcsUri = `gs://${bucketName}/${gcsOutputPrefix}`
-
-        const request = {
-            name,
-            inputDocuments: {
-                gcsDocuments: {
-                    documents: [
-                        {
-                            gcsUri: inputGcsUri,
-                            mimeType: 'application/pdf'
-                        }
-                    ]
-                }
-            },
-            documentOutputConfig: {
-                gcsOutputConfig: {
-                    gcsUri: outputGcsUri
-                }
-            }
-        }
-
-        console.log('Starting Batch Processing...')
-        const [operation] = await docAIClient.batchProcessDocuments(request)
-        console.log(`Operation started: ${operation.name}`)
-
-        // Wait for completion
-        await operation.promise()
-        console.log('Batch Processing Completed.')
-
-        // 4. Download & Parse Results
-        console.log('Fetching results from GCS...')
-        const [files] = await bucket.getFiles({ prefix: gcsOutputPrefix })
+        const pdfDoc = await PDFDocument.load(buffer)
+        const totalPages = pdfDoc.getPageCount()
+        console.log(`Total pages: ${totalPages}`)
 
         let fullText = ''
+        const chunkSize = 15
 
-        // Document AI output is sharded JSONs
-        const jsonFiles = files.filter(f => f.name.endsWith('.json'))
+        const name = `projects/${projectId}/locations/${location}/processors/${processorId}`
 
-        // We need to sort them, but usually they contain page info.
-        // Actually, Document AI output files might be named differently but iterating them is fine.
+        for (let i = 0; i < totalPages; i += chunkSize) {
+            const end = Math.min(i + chunkSize, totalPages)
+            console.log(`[${new Date().toISOString()}] Processing pages ${i + 1} to ${end}...`)
 
-        for (const file of jsonFiles) {
-            const [content] = await file.download()
-            const result = JSON.parse(content.toString())
-            if (result.text) {
-                fullText += result.text
+            const subDoc = await PDFDocument.create()
+            const copiedPages = await subDoc.copyPages(pdfDoc, Array.from({ length: end - i }, (_, k) => i + k))
+            copiedPages.forEach(page => subDoc.addPage(page))
+            const subBuffer = await subDoc.save()
+            const subBase64 = Buffer.from(subBuffer).toString('base64')
+
+            const request = {
+                name,
+                rawDocument: {
+                    content: subBase64,
+                    mimeType: 'application/pdf'
+                }
+            }
+
+            try {
+                const [result] = await docAIClient.processDocument(request)
+                const text = result.document?.text || ''
+                fullText += text + '\n'
+            } catch (chunkErr) {
+                console.error(`Error processing chunk ${i}-${end}:`, chunkErr)
+                // Continue with other chunks? Or fail?
+                // Better to continue and get partial results than nothing.
             }
         }
 
         console.log(`Extracted ${fullText.length} characters.`)
 
-        // 5. Generate Gemini Summary
+        // 3. Generate Gemini Summary
         console.log('Generating Gemini Summary...')
         // Truncate if too long? Gemini 2.0 has large context (1M tokens).
         // 80 pages of text is fine.
@@ -253,16 +237,6 @@ ${fullText}
             .eq('id', tender_id)
 
         console.log('Tender Profile Updated.')
-
-        // 7. Cleanup GCS (Optional but good)
-        // Delete input and output
-        try {
-            await bucket.file(gcsInputPath).delete()
-            await bucket.deleteFiles({ prefix: gcsOutputPrefix })
-            console.log('GCS Cleanup successful.')
-        } catch (e) {
-            console.warn('GCS Cleanup failed:', e)
-        }
 
     } catch (err: any) {
         console.error('ProcessTender Failed:', err)
