@@ -118,3 +118,7 @@ CREATE POLICY "Users can insert own documents" ON document_uploads
 -- If user inserts, they need permission.
 CREATE POLICY "Users can insert jobs" ON jobs
     FOR INSERT WITH CHECK (true); -- Ideally restrict payload content but for now OK.
+
+-- Migration: Add OCR and Summary columns
+ALTER TABLE tender_profiles ADD COLUMN IF NOT EXISTS ocr_text TEXT;
+ALTER TABLE tender_profiles ADD COLUMN IF NOT EXISTS summary TEXT;

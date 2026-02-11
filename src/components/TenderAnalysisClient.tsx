@@ -14,6 +14,7 @@ interface Props {
 
 export default function TenderAnalysisClient({ tender, company, eligibility, userId }: Props) {
   const [activeStep, setActiveStep] = useState(1)
+  const [showDebugText, setShowDebugText] = useState(false)
   const router = useRouter()
 
   // Chat State
@@ -70,6 +71,61 @@ export default function TenderAnalysisClient({ tender, company, eligibility, use
   // --- Render Steps ---
 
   const renderStep1 = () => {
+    // If summary exists (new flow), show summary. Else show old clauses flow.
+    const isNewFlow = !!tender.summary || !!tender.ocr_text;
+
+    if (isNewFlow) {
+        return (
+            <div className="space-y-6">
+                 {/* Header Status */}
+                 <div className="bg-white p-4 rounded-lg shadow flex justify-between items-center">
+                     <div>
+                         <h2 className="text-lg font-bold">Analysis Status</h2>
+                         <div className="flex items-center gap-2 mt-1">
+                            <span className="flex items-center text-green-600 font-bold"><CheckCircle className="w-5 h-5 mr-1"/> Analyzed</span>
+                         </div>
+                     </div>
+                     <div className="text-right">
+                         <p className="text-sm text-gray-500">Closing Date</p>
+                         <p className="font-mono font-bold text-red-600">
+                             {tender.closing_date ? new Date(tender.closing_date).toLocaleDateString() : 'N/A'}
+                         </p>
+                     </div>
+                 </div>
+
+                 {/* Summary Section */}
+                 <div className="bg-white p-6 rounded-lg shadow space-y-4">
+                     <h3 className="text-lg font-semibold text-gray-900">Executive Summary</h3>
+                     <div className="prose prose-sm max-w-none text-gray-600 whitespace-pre-wrap">
+                         {tender.summary || 'No summary available.'}
+                     </div>
+                 </div>
+
+                 {/* Debug Button */}
+                 <div className="flex justify-between items-center">
+                     <button
+                        onClick={() => setShowDebugText(!showDebugText)}
+                        className="text-sm text-gray-500 underline hover:text-gray-700 flex items-center"
+                     >
+                        <FileText className="w-4 h-4 mr-1"/>
+                        {showDebugText ? 'Hide Extracted Text' : 'View Extracted Text (Debug)'}
+                     </button>
+
+                     <button onClick={() => setActiveStep(2)} className="bg-indigo-600 text-white px-6 py-2 rounded-md hover:bg-indigo-700">
+                        Proceed to Actions
+                     </button>
+                 </div>
+
+                 {/* Debug View */}
+                 {showDebugText && (
+                     <div className="bg-gray-50 p-4 rounded border font-mono text-xs text-gray-700 h-96 overflow-y-auto whitespace-pre-wrap">
+                         {tender.ocr_text || 'No extracted text found.'}
+                     </div>
+                 )}
+            </div>
+        )
+    }
+
     // Group clauses by category
     const categories: Record<string, any[]> = {}
     tender.clauses?.forEach((c: any) => {

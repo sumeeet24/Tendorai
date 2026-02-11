@@ -1,8 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
-import { convertPdfToImages } from '../src/lib/pdf.js' // Note extension for worker if using ts-node or similar?
-// Actually I will compile or run using ts-node.
-import { generateJSON } from '../src/lib/gemini.js'
-// I need to make sure imports work. I'm writing TS files.
+import { convertPdfToImages } from '../src/lib/pdf.js'
+import { generateJSON, generateText } from '../src/lib/gemini.js'
+import { processDocument } from '../src/lib/documentai.js'
 
 // Initialize Supabase Admin Client
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
@@ -132,141 +131,49 @@ export async function processTender(job: any) {
 
     if (downloadError) throw downloadError
 
-    // 2. Convert
     const arrayBuffer = await fileData.arrayBuffer()
-    const images = await convertPdfToImages(arrayBuffer)
+    const buffer = Buffer.from(arrayBuffer)
 
-    // 3. Chunking (8 pages, 2 overlap)
-    const CHUNK_SIZE = 8
-    const OVERLAP = 2
-    const clauses: any[] = []
+    try {
+        // 2. Document AI Extraction (Replaces Gemini Chunking)
+        console.log('Sending to Document AI...')
+        const ocrText = await processDocument(buffer)
 
-    for (let i = 0; i < images.length; i += (CHUNK_SIZE - OVERLAP)) {
-        const chunkImages = images.slice(i, i + CHUNK_SIZE)
-        if (chunkImages.length === 0) break
+        // 3. Summarize with Gemini
+        console.log('Generating Summary...')
+        // Gemini 2.0 Flash has large context window.
+        const summaryPrompt = `
+Summarize the following tender document in 3-5 concise bullet points.
+Highlight the key requirements and scope.
 
-        const prompt = `
-You are a tender clause extraction engine.
-
-Task:
-Extract clauses EXACTLY as written.
-
-Rules (MANDATORY):
-- DO NOT summarize
-- DO NOT remove text
-- DO NOT rephrase
-- DO NOT decide importance
-- DO NOT merge clauses unless text explicitly continues
-- Preserve numbers, symbols, and formatting
-- Mark clauses as incomplete if they end abruptly
-- Output JSON ONLY
-
-Classify each clause into ONE category:
-GENERAL
-ELIGIBILITY
-FINANCIAL
-TECHNICAL
-SCOPE
-EMD
-EVALUATION
-PENALTY
-DATES
-DOCUMENT_REQUIREMENT
-
-Input Pages: ${chunkImages.map(img => img.pageNumber).join(', ')}
+Document Text:
+${ocrText}
 `
-        const result = await generateJSON(prompt, chunkImages.map(img => img.base64))
-        if (result && result.clauses) {
-            clauses.push(...result.clauses)
-        }
+        const summary = await generateText(summaryPrompt)
+
+        // 4. Store in TenderProfile
+        await supabase
+            .from('tender_profiles')
+            .update({
+                ocr_text: ocrText,
+                summary: summary,
+                processed: true
+                // clauses: [], // We are disabling clauses for now
+            })
+            .eq('id', tender_id)
+
+        console.log(`Tender ${tender_id} processed successfully.`)
+
+        // Disable Eligibility Calculation
+        // await calculateEligibility(tender_id, company_id)
+
+    } catch (err: any) {
+        console.error('Error processing tender:', err)
+        throw err
     }
-
-    // 4. Stitching (Code only)
-    // "Resolve clause continuations" - simple concatenation if 'incomplete' matches next start?
-    // For now, flatten.
-    // Ideally, we check if clause[k].incomplete and clause[k+1] starts with lowercase or continuation.
-    // I'll just save the raw array for now.
-
-    // 5. Store in TenderProfile
-    await supabase
-        .from('tender_profiles')
-        .update({
-            clauses: clauses,
-            processed: true
-        })
-        .eq('id', tender_id)
-
-    // 6. Calculate Eligibility
-    await calculateEligibility(tender_id, company_id)
 }
 
 async function calculateEligibility(tenderId: string, companyId: string) {
-    console.log(`Calculating Eligibility: Tender ${tenderId}, Company ${companyId}`)
-
-    // Fetch Data
-    const { data: tender } = await supabase.from('tender_profiles').select('*').eq('id', tenderId).single()
-    const { data: company } = await supabase.from('company_profiles').select('*').eq('id', companyId).single()
-
-    if (!tender || !company) return
-
-    const clauses = tender.clauses || []
-    const failedClauses: any[] = []
-
-    // Logic: Iterate over clauses. If 'FINANCIAL' or 'TECHNICAL' or 'ELIGIBILITY', check against company data.
-    // Since "Eligibility is pure code logic, not AI", I need to parse the clauses?
-    // BUT clauses are text: "Turnover must be 10 Cr".
-    // I cannot extract "10 Cr" without AI or Regex.
-    // The Agent 2 output: "numbers": ["₹10 Cr"]
-    // So I can check numbers?
-    // Example:
-    // Clause: "Average Annual Turnover ... should be at least Rs. 50 Lakhs"
-    // Agent 2 extracted "numbers": ["50 Lakhs"] and category "FINANCIAL".
-
-    // Company: turnover: [{ year: "2023", amount: "60 Lakhs" }]
-
-    // I need a parser for amounts (Lakhs, Cr).
-    // This is complex "Pure Code" logic.
-    // I will implement a basic version.
-
-    for (const clause of clauses) {
-        if (clause.category === 'FINANCIAL') {
-            // Check turnover
-            // This is a placeholder for the complex logic required.
-            // I'll implement a simple check: if clause contains "Turnover" and numbers.
-            // ...
-            // Since this is a build, I'll do my best effort.
-            // I'll skip complex parsing and just mark ELIGIBLE for now unless I can implement the parser.
-            // Wait, "Eligibility is pure code logic".
-            // I'll try to find a number in clause and compare with company turnover sum/avg.
-        }
-    }
-
-    // For the demo purpose/MVP, I will set status based on presence of documents?
-    // "User uploads documents... System matches...".
-
-    // Let's implement a MOCK eligibility check that actually runs code.
-    // If company has NO turnover data, fail FINANCIAL clauses.
-    if ((!company.turnover || company.turnover.length === 0) && clauses.some((c: any) => c.category === 'FINANCIAL')) {
-         failedClauses.push({ clause_id: 'financial_missing', reason: 'No financial data uploaded' })
-    }
-
-    const status = failedClauses.length > 0 ? 'NOT_ELIGIBLE' : 'ELIGIBLE'
-
-    // Store Result
-    // Check if exists
-    const { data: existing } = await supabase.from('eligibility_results').select('id').eq('tender_id', tenderId).single()
-
-    const resultData = {
-        tender_id: tenderId,
-        company_id: companyId,
-        status: status,
-        failed_clauses: failedClauses,
-        confidence: 0.9 // Placeholder
-    }
-
-    if (existing) {
-        await supabase.from('eligibility_results').update(resultData).eq('id', existing.id)
-    } else {
-        await supabase.from('eligibility_results').insert(resultData)
-    }
+    // Disabled for now as per instructions
+    console.log(`Skipping Eligibility: Tender ${tenderId}, Company ${companyId}`)
 }
