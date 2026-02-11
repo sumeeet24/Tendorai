@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js'
 import { convertPdfToImages } from '../src/lib/pdf.js'
 import { generateJSON, generateText } from '../src/lib/gemini.js'
 import { DocumentProcessorServiceClient } from '@google-cloud/documentai'
+import { Storage } from '@google-cloud/storage'
 import path from 'path'
 import fs from 'fs'
 import os from 'os'
@@ -28,10 +29,15 @@ if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
 }
 
 const projectId = process.env.GOOGLE_CLOUD_PROJECT_ID || 'document-ai-2026'
+// Use the numeric ID for buckets if possible to avoid issues?
+// But usually bucket names must be unique globally.
+const bucketProjectId = '875739244664' // From user env details
+
 const location = process.env.GOOGLE_CLOUD_REGION || 'us'
 const processorId = process.env.DOCUMENT_AI_PROCESSOR_ID
 
 const docAIClient = new DocumentProcessorServiceClient()
+const storage = new Storage({ projectId })
 
 export async function processCompanyDoc(job: any) {
     const { document_id, company_id, file_path, document_type, owner_id } = job.payload
@@ -121,14 +127,11 @@ Page Number: ${img.pageNumber}
             extracted_data: mergedData
         })
         .eq('id', document_id)
-
-    // 7. Trigger Eligibility Recalculation (Pipeline 4)
-    // Placeholder - requires implementation of calculateEligibility
 }
 
 export async function processTender(job: any) {
     const { tender_id, company_id, file_path } = job.payload
-    console.log(`Processing Tender (DocAI Online): ${tender_id}`)
+    console.log(`Processing Tender: ${tender_id}`)
 
     try {
         // 1. Download from Supabase
@@ -139,41 +142,22 @@ export async function processTender(job: any) {
         if (downloadError) throw downloadError
 
         const arrayBuffer = await fileData.arrayBuffer()
-
-        // 2. Convert PDF to Images
-        console.log('Converting PDF to images...')
-        const images = await convertPdfToImages(arrayBuffer)
-        console.log(`Converted ${images.length} pages.`)
+        const buffer = Buffer.from(arrayBuffer)
 
         let fullText = ''
 
-        // 3. Process each page with Document AI
-        const name = `projects/${projectId}/locations/${location}/processors/${processorId}`
+        // 2. Attempt GCS Batch Processing first (Preferred for large docs)
+        try {
+            console.log('Attempting GCS Batch Processing...')
+            fullText = await processTenderViaGCS(tender_id, buffer)
+            console.log('GCS Batch Processing Successful.')
+        } catch (gcsError: any) {
+            console.warn('GCS Batch Processing Failed (likely permissions). Falling back to Online Processing.', gcsError.message)
 
-        // Process sequentially or in small batches
-        for (const [index, img] of images.entries()) {
-             console.log(`Processing page ${index + 1}/${images.length}...`)
-             const request = {
-                name,
-                rawDocument: {
-                    content: img.base64, // convertPdfToImages returns base64 string (jpeg)
-                    mimeType: 'image/jpeg',
-                }
-            }
-
-            try {
-                const [result] = await docAIClient.processDocument(request)
-                const { document } = result
-                if (document && document.text) {
-                    fullText += document.text + '\n'
-                }
-            } catch (pageErr) {
-                console.error(`Error processing page ${index + 1}:`, pageErr)
-                // Continue with other pages
-            }
+            // 3. Fallback to Online Processing
+            console.log('Starting Online Processing (Page-by-Page)...')
+            fullText = await processTenderOnline(arrayBuffer)
         }
-
-        console.log(`Extracted ${fullText.length} characters.`)
 
         if (!fullText) {
              throw new Error('No text extracted from document.')
@@ -229,4 +213,112 @@ ${fullText}
         console.error('ProcessTender Failed:', err)
         throw err
     }
+}
+
+async function processTenderViaGCS(tender_id: string, buffer: Buffer): Promise<string> {
+    const bucketName = `tender-ai-processing-${projectId}`
+    const gcsInputPath = `inputs/${tender_id}.pdf`
+    const gcsOutputPrefix = `outputs/${tender_id}/`
+
+    // Ensure Bucket Exists & Upload
+    const bucket = storage.bucket(bucketName)
+    const [exists] = await bucket.exists()
+    if (!exists) {
+        console.log(`Creating bucket ${bucketName}...`)
+        await bucket.create({ location })
+    }
+
+    console.log(`Uploading to GCS: gs://${bucketName}/${gcsInputPath}`)
+    await bucket.file(gcsInputPath).save(buffer)
+
+    // Document AI Batch Process
+    const name = `projects/${projectId}/locations/${location}/processors/${processorId}`
+    const inputGcsUri = `gs://${bucketName}/${gcsInputPath}`
+    const outputGcsUri = `gs://${bucketName}/${gcsOutputPrefix}`
+
+    const request = {
+        name,
+        inputDocuments: {
+            gcsDocuments: {
+                documents: [
+                    {
+                        gcsUri: inputGcsUri,
+                        mimeType: 'application/pdf'
+                    }
+                ]
+            }
+        },
+        documentOutputConfig: {
+            gcsOutputConfig: {
+                gcsUri: outputGcsUri
+            }
+        }
+    }
+
+    console.log('Starting Batch Processing...')
+    const [operation] = await docAIClient.batchProcessDocuments(request)
+    console.log(`Operation started: ${operation.name}`)
+
+    await operation.promise()
+    console.log('Batch Processing Completed.')
+
+    // Download & Parse Results
+    const [files] = await bucket.getFiles({ prefix: gcsOutputPrefix })
+    let text = ''
+    const jsonFiles = files.filter(f => f.name.endsWith('.json'))
+
+    for (const file of jsonFiles) {
+        const [content] = await file.download()
+        const result = JSON.parse(content.toString())
+        if (result.text) {
+            text += result.text
+        }
+    }
+
+    // Cleanup
+    try {
+        await bucket.file(gcsInputPath).delete()
+        await bucket.deleteFiles({ prefix: gcsOutputPrefix })
+    } catch (e) {
+        console.warn('GCS Cleanup failed:', e)
+    }
+
+    return text
+}
+
+async function processTenderOnline(arrayBuffer: ArrayBuffer): Promise<string> {
+    const images = await convertPdfToImages(arrayBuffer)
+    console.log(`Converted ${images.length} pages.`)
+
+    let text = ''
+    const name = `projects/${projectId}/locations/${location}/processors/${processorId}`
+
+    // Process in batches of 3 to avoid rate limits but speed up processing
+    const BATCH_SIZE = 3
+    for (let i = 0; i < images.length; i += BATCH_SIZE) {
+        const batch = images.slice(i, i + BATCH_SIZE)
+        console.log(`Processing pages ${i + 1} to ${Math.min(i + BATCH_SIZE, images.length)}...`)
+
+        const promises = batch.map(async (img) => {
+             const request = {
+                name,
+                rawDocument: {
+                    content: img.base64,
+                    mimeType: 'image/jpeg',
+                }
+            }
+            try {
+                const [result] = await docAIClient.processDocument(request)
+                return result.document?.text || ''
+            } catch (err) {
+                console.error(`Error processing page ${img.pageNumber}:`, err)
+                return ''
+            }
+        })
+
+        const results = await Promise.all(promises)
+        text += results.join('\n')
+    }
+
+    return text
 }
