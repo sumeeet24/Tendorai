@@ -6,24 +6,36 @@ import path from 'path'
 import fs from 'fs'
 
 // Initialize Supabase Admin Client
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+
+if (!supabaseUrl || !supabaseServiceKey) {
+    console.error('CRITICAL: Missing Supabase Credentials (NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY)')
+    process.exit(1)
+}
+
 const supabase = createClient(supabaseUrl, supabaseServiceKey)
 
 // Initialize Google Clients
 const GOOGLE_KEY_FILE = path.resolve('service-account.json')
+
 if (fs.existsSync(GOOGLE_KEY_FILE)) {
     process.env.GOOGLE_APPLICATION_CREDENTIALS = GOOGLE_KEY_FILE
+    console.log(`Using existing service-account.json at ${GOOGLE_KEY_FILE}`)
 } else if (process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON) {
     try {
+        console.log('Found GOOGLE_APPLICATION_CREDENTIALS_JSON, writing to file...')
         fs.writeFileSync(GOOGLE_KEY_FILE, process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON);
         process.env.GOOGLE_APPLICATION_CREDENTIALS = GOOGLE_KEY_FILE
-        console.log('Created service-account.json from env var');
+        console.log('Created service-account.json from env var successfully.');
     } catch (e) {
-        console.error('Failed to create service-account.json', e);
+        console.error('CRITICAL: Failed to create service-account.json from env var', e);
+        process.exit(1)
     }
 } else {
-    console.warn('Google Service Account JSON not found at', GOOGLE_KEY_FILE)
+    console.error('CRITICAL: Google Service Account Credentials NOT FOUND.')
+    console.error('Please provide GOOGLE_APPLICATION_CREDENTIALS_JSON env var or place service-account.json in root.')
+    process.exit(1)
 }
 
 const projectId = process.env.GOOGLE_CLOUD_PROJECT_ID || 'document-ai-2026'
