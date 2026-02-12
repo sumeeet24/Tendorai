@@ -7,7 +7,12 @@ const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!.trim()
 const supabase = createClient(supabaseUrl, supabaseServiceKey)
 
 async function worker() {
-    console.log('Worker started...')
+    console.log('--- Document Processing Worker ---')
+    console.log('Supabase URL:', supabaseUrl)
+    console.log('Service Key:', supabaseServiceKey ? '*** SET ***' : 'MISSING')
+    console.log('Gemini API Key:', process.env.GEMINI_API_KEY ? '*** SET ***' : 'MISSING')
+    console.log('DocAI Processor ID:', process.env.DOCUMENT_AI_PROCESSOR_ID ? '*** SET ***' : 'MISSING')
+    console.log('Worker loop starting...')
     while (true) {
         try {
             // Fetch pending job
