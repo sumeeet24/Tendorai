@@ -1,10 +1,10 @@
 import { createClient } from '@supabase/supabase-js'
-import { convertPdfToImages } from '../src/lib/pdf.js'
 import { generateJSON, generateText } from '../src/lib/gemini.js'
 import { DocumentProcessorServiceClient } from '@google-cloud/documentai'
 import { Storage } from '@google-cloud/storage'
 import path from 'path'
 import fs from 'fs'
+
 // Initialize Supabase Admin Client
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -29,108 +29,189 @@ if (fs.existsSync(GOOGLE_KEY_FILE)) {
 const projectId = process.env.GOOGLE_CLOUD_PROJECT_ID || 'document-ai-2026'
 const location = process.env.GOOGLE_CLOUD_REGION || 'us'
 const processorId = process.env.DOCUMENT_AI_PROCESSOR_ID
+const bucketName = 'tendor_ai_bckt'
 
 const docAIClient = new DocumentProcessorServiceClient()
 const storage = new Storage({ projectId })
 
-export async function processCompanyDoc(job: any) {
-    const { document_id, company_id, file_path, document_type, owner_id } = job.payload
+// --- HELPERS ---
 
+async function uploadBufferToGCS(buffer: Buffer, gcsPath: string) {
+    console.log(`Uploading to GCS: gs://${bucketName}/${gcsPath}`)
+    const bucket = storage.bucket(bucketName)
+    await bucket.file(gcsPath).save(buffer)
+}
+
+async function runBatchProcessing(gcsInputPath: string, gcsOutputPrefix: string) {
+    const name = `projects/${projectId}/locations/${location}/processors/${processorId}`
+    const inputGcsUri = `gs://${bucketName}/${gcsInputPath}`
+    const outputGcsUri = `gs://${bucketName}/${gcsOutputPrefix}`
+
+    const request = {
+        name,
+        inputDocuments: {
+            gcsDocuments: {
+                documents: [
+                    {
+                        gcsUri: inputGcsUri,
+                        mimeType: 'application/pdf'
+                    }
+                ]
+            }
+        },
+        documentOutputConfig: {
+            gcsOutputConfig: {
+                gcsUri: outputGcsUri
+            }
+        }
+    }
+
+    console.log(`[${new Date().toISOString()}] Starting Batch Processing...`)
+    const [operation] = await docAIClient.batchProcessDocuments(request)
+    console.log(`[${new Date().toISOString()}] Operation started: ${operation.name}`)
+
+    await operation.promise()
+    console.log(`[${new Date().toISOString()}] Batch Processing Completed.`)
+}
+
+async function extractTextFromGCS(gcsOutputPrefix: string): Promise<string> {
+    console.log(`[${new Date().toISOString()}] Fetching results from GCS...`)
+    const bucket = storage.bucket(bucketName)
+    const [files] = await bucket.getFiles({ prefix: gcsOutputPrefix })
+
+    const jsonFiles = files.filter(f => f.name.endsWith('.json'))
+    jsonFiles.sort((a, b) => a.name.localeCompare(b.name))
+
+    let fullText = ''
+    for (const file of jsonFiles) {
+        const [content] = await file.download()
+        const result = JSON.parse(content.toString())
+        if (result.text) {
+            fullText += result.text
+        }
+    }
+    console.log(`Extracted ${fullText.length} characters.`)
+    return fullText
+}
+
+async function cleanupGCS(gcsInputPath: string, gcsOutputPrefix: string) {
+    try {
+        const bucket = storage.bucket(bucketName)
+        await bucket.file(gcsInputPath).delete()
+        await bucket.deleteFiles({ prefix: gcsOutputPrefix })
+        console.log('GCS Cleanup successful.')
+    } catch (e) {
+        console.warn('GCS Cleanup failed:', e)
+    }
+}
+
+// --- PROCESSORS ---
+
+export async function processCompanyDoc(job: any) {
+    const { document_id, company_id, file_path } = job.payload
     console.log(`Processing Company Doc: ${document_id}`)
 
-    // 1. Download File
-    const { data: fileData, error: downloadError } = await supabase.storage
-        .from('company-docs')
-        .download(file_path)
+    const gcsInputPath = `inputs/company_${document_id}/document.pdf`
+    const gcsOutputPrefix = `outputs/company_${document_id}/`
 
-    if (downloadError) throw downloadError
+    try {
+        // 1. Download from Supabase
+        const { data: fileData, error: downloadError } = await supabase.storage
+            .from('company-docs')
+            .download(file_path)
 
-    // 2. Convert to Images
-    const arrayBuffer = await fileData.arrayBuffer()
-    const images = await convertPdfToImages(arrayBuffer)
+        if (downloadError) throw downloadError
 
-    // 3. Extract Data (Agent 1)
-    const extractedResults: any[] = []
+        const buffer = Buffer.from(await fileData.arrayBuffer())
 
-    for (const img of images) {
+        // 2. Upload to GCS
+        await uploadBufferToGCS(buffer, gcsInputPath)
+
+        // 3. Batch Process
+        await runBatchProcessing(gcsInputPath, gcsOutputPrefix)
+
+        // 4. Extract Full Text
+        const fullText = await extractTextFromGCS(gcsOutputPrefix)
+
+        // 5. Extract Structured Data (Gemini)
+        console.log('Generating structured data with Gemini...')
         const prompt = `
 You are a data extraction engine.
 
 Task:
-Extract ONLY factual company information explicitly written on the page.
+Extract ONLY factual company information explicitly written in the provided text.
 
 Rules (MANDATORY):
 - DO NOT summarize
 - DO NOT infer
 - DO NOT judge eligibility
 - DO NOT rewrite text
-- DO NOT merge information across pages
 - Preserve numbers, symbols, and wording EXACTLY
 - If information is not present, return empty arrays
 - Output JSON ONLY. No explanations.
+
+Text:
+${fullText}
 
 Extract the following if present:
 1. Annual turnover (year, amount)
 2. Completed projects (name, value, year, client)
 3. Certifications (name, issuer, validity)
 4. OEM authorizations
-
-Always include page_number in each extracted item.
-Page Number: ${img.pageNumber}
 `
-        const result = await generateJSON(prompt, [img.base64])
-        if (result) {
-            extractedResults.push(result)
-        }
-    }
+        // Pass empty array for images as we are using text-only prompt
+        const result = await generateJSON(prompt, [])
 
-    // 4. Merge Results
-    const mergedData = {
-        turnover: extractedResults.flatMap(r => r.turnover || []),
-        projects: extractedResults.flatMap(r => r.projects || []),
-        certifications: extractedResults.flatMap(r => r.certifications || []),
-        oem_authorizations: extractedResults.flatMap(r => r.oem_authorizations || [])
-    }
-
-    // 5. Update Company Profile (Append/Merge)
-    const { data: profile } = await supabase
-        .from('company_profiles')
-        .select('*')
-        .eq('id', company_id)
-        .single()
-
-    if (profile) {
-        const updatedProfile = {
-            turnover: [...(profile.turnover || []), ...mergedData.turnover],
-            projects: [...(profile.projects || []), ...mergedData.projects],
-            certifications: [...(profile.certifications || []), ...mergedData.certifications],
-            oem_authorizations: [...(profile.oem_authorizations || []), ...mergedData.oem_authorizations]
+        const mergedData = {
+            turnover: result.turnover || [],
+            projects: result.projects || [],
+            certifications: result.certifications || [],
+            oem_authorizations: result.oem_authorizations || []
         }
 
-        await supabase
+        // 6. Update Company Profile
+        const { data: profile } = await supabase
             .from('company_profiles')
-            .update(updatedProfile)
+            .select('*')
             .eq('id', company_id)
+            .single()
+
+        if (profile) {
+            const updatedProfile = {
+                turnover: [...(profile.turnover || []), ...mergedData.turnover],
+                projects: [...(profile.projects || []), ...mergedData.projects],
+                certifications: [...(profile.certifications || []), ...mergedData.certifications],
+                oem_authorizations: [...(profile.oem_authorizations || []), ...mergedData.oem_authorizations]
+            }
+
+            await supabase
+                .from('company_profiles')
+                .update(updatedProfile)
+                .eq('id', company_id)
+        }
+
+        // 7. Update Document Status
+        await supabase
+            .from('document_uploads')
+            .update({
+                processing_status: 'completed',
+                extracted_data: mergedData
+            })
+            .eq('id', document_id)
+
+        // 8. Cleanup
+        await cleanupGCS(gcsInputPath, gcsOutputPrefix)
+
+    } catch (err: any) {
+        console.error('ProcessCompanyDoc Failed:', err)
+        throw err
     }
-
-    // 6. Update Document Status
-    await supabase
-        .from('document_uploads')
-        .update({
-            processing_status: 'completed',
-            extracted_data: mergedData
-        })
-        .eq('id', document_id)
-
-    // 7. Trigger Eligibility Recalculation (Pipeline 4)
-    // Placeholder - requires implementation of calculateEligibility
 }
 
 export async function processTender(job: any) {
-    const { tender_id, company_id, file_path } = job.payload
+    const { tender_id, file_path } = job.payload
     console.log(`Processing Tender (DocAI Batch GCS): ${tender_id}`)
 
-    const bucketName = 'tendor_ai_bckt'
     const gcsInputPath = `inputs/${tender_id}/document.pdf`
     const gcsOutputPrefix = `outputs/${tender_id}/`
 
@@ -145,69 +226,16 @@ export async function processTender(job: any) {
         const buffer = Buffer.from(await fileData.arrayBuffer())
 
         // 2. Upload to GCS
-        const bucket = storage.bucket(bucketName)
-        console.log(`Uploading to GCS: gs://${bucketName}/${gcsInputPath}`)
-        await bucket.file(gcsInputPath).save(buffer)
+        await uploadBufferToGCS(buffer, gcsInputPath)
 
-        // 3. Document AI Batch Process
-        const name = `projects/${projectId}/locations/${location}/processors/${processorId}`
-        const inputGcsUri = `gs://${bucketName}/${gcsInputPath}`
-        const outputGcsUri = `gs://${bucketName}/${gcsOutputPrefix}`
+        // 3. Batch Process
+        await runBatchProcessing(gcsInputPath, gcsOutputPrefix)
 
-        const request = {
-            name,
-            inputDocuments: {
-                gcsDocuments: {
-                    documents: [
-                        {
-                            gcsUri: inputGcsUri,
-                            mimeType: 'application/pdf'
-                        }
-                    ]
-                }
-            },
-            documentOutputConfig: {
-                gcsOutputConfig: {
-                    gcsUri: outputGcsUri
-                }
-            }
-        }
-
-        console.log(`[${new Date().toISOString()}] Starting Batch Processing...`)
-        const [operation] = await docAIClient.batchProcessDocuments(request)
-        console.log(`[${new Date().toISOString()}] Operation started: ${operation.name}`)
-
-        // Wait for completion
-        await operation.promise()
-        console.log(`[${new Date().toISOString()}] Batch Processing Completed.`)
-
-        // 4. Download & Parse Results
-        console.log(`[${new Date().toISOString()}] Fetching results from GCS...`)
-        const [files] = await bucket.getFiles({ prefix: gcsOutputPrefix })
-
-        let fullText = ''
-
-        // Document AI output is sharded JSONs
-        const jsonFiles = files.filter(f => f.name.endsWith('.json'))
-
-        // Sort files to ensure order (optional but good practice)
-        jsonFiles.sort((a, b) => a.name.localeCompare(b.name))
-
-        for (const file of jsonFiles) {
-            const [content] = await file.download()
-            const result = JSON.parse(content.toString())
-            if (result.text) {
-                fullText += result.text
-            }
-        }
-
-        console.log(`Extracted ${fullText.length} characters.`)
+        // 4. Extract Full Text
+        const fullText = await extractTextFromGCS(gcsOutputPrefix)
 
         // 5. Generate Gemini Summary
         console.log('Generating Gemini Summary...')
-        // Truncate if too long? Gemini 2.0 has large context (1M tokens).
-        // 80 pages of text is fine.
-
         const summaryPrompt = `
 You are a tender analyst.
 Summarize the following tender document text into a concise executive summary.
@@ -228,9 +256,6 @@ ${fullText}
         }
 
         // 6. Update Tender Profile
-        // Using metadata column as decided (skipping migration)
-
-        // First fetch existing metadata to preserve other fields if any
         const { data: currentTender } = await supabase
             .from('tender_profiles')
             .select('metadata')
@@ -248,21 +273,14 @@ ${fullText}
                     summary: summary
                 },
                 processed: true,
-                // Clear old clauses to avoid confusion? Or keep them empty.
                 clauses: []
             })
             .eq('id', tender_id)
 
         console.log('Tender Profile Updated.')
 
-        // 7. Cleanup GCS
-        try {
-            await bucket.file(gcsInputPath).delete()
-            await bucket.deleteFiles({ prefix: gcsOutputPrefix })
-            console.log('GCS Cleanup successful.')
-        } catch (e) {
-            console.warn('GCS Cleanup failed:', e)
-        }
+        // 7. Cleanup
+        await cleanupGCS(gcsInputPath, gcsOutputPrefix)
 
     } catch (err: any) {
         console.error('ProcessTender Failed:', err)
