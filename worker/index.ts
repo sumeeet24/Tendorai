@@ -8,6 +8,8 @@ const supabase = createClient(supabaseUrl, supabaseServiceKey)
 
 async function worker() {
     console.log('Worker started...')
+    console.log(`Supabase URL: ${supabaseUrl}`)
+
     while (true) {
         try {
             // Fetch pending job
@@ -19,6 +21,10 @@ async function worker() {
 
             if (error) {
                 console.error('Error fetching jobs:', error)
+                if (error.message?.includes('Invalid API key') || error.code === 'PGRST301') {
+                    console.error('Fatal Auth Error: Invalid API Key. Exiting process to avoid silent loop.')
+                    process.exit(1)
+                }
                 await new Promise(r => setTimeout(r, 5000))
                 continue
             }

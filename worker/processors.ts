@@ -7,7 +7,7 @@ import fs from 'fs'
 
 // Initialize Supabase Admin Client
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!.trim()
 const supabase = createClient(supabaseUrl, supabaseServiceKey)
 
 // Initialize Google Clients
@@ -27,6 +27,7 @@ if (fs.existsSync(GOOGLE_KEY_FILE)) {
 }
 
 const projectId = process.env.GOOGLE_CLOUD_PROJECT_ID || 'document-ai-2026'
+console.log(`Using Google Cloud Project ID: ${projectId}`)
 const location = process.env.GOOGLE_CLOUD_REGION || 'us'
 const processorId = process.env.DOCUMENT_AI_PROCESSOR_ID
 const bucketName = 'tendor_ai_bckt'
