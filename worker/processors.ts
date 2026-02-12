@@ -5,8 +5,6 @@ import { DocumentProcessorServiceClient } from '@google-cloud/documentai'
 import { Storage } from '@google-cloud/storage'
 import path from 'path'
 import fs from 'fs'
-import { PDFDocument } from 'pdf-lib'
-
 // Initialize Supabase Admin Client
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -130,7 +128,11 @@ Page Number: ${img.pageNumber}
 
 export async function processTender(job: any) {
     const { tender_id, company_id, file_path } = job.payload
-    console.log(`Processing Tender (DocAI Online Splitting): ${tender_id}`)
+    console.log(`Processing Tender (DocAI Batch GCS): ${tender_id}`)
+
+    const bucketName = 'tendor_ai_bckt'
+    const gcsInputPath = `inputs/${tender_id}/document.pdf`
+    const gcsOutputPrefix = `outputs/${tender_id}/`
 
     try {
         // 1. Download from Supabase
@@ -142,51 +144,66 @@ export async function processTender(job: any) {
 
         const buffer = Buffer.from(await fileData.arrayBuffer())
 
-        // 2. Split PDF and Process Online (Fallback for missing Bucket)
-        // Since the GCS bucket is missing/inaccessible, we use online processing
-        // by splitting the PDF into chunks of 15 pages (DocAI limit).
+        // 2. Upload to GCS
+        const bucket = storage.bucket(bucketName)
+        console.log(`Uploading to GCS: gs://${bucketName}/${gcsInputPath}`)
+        await bucket.file(gcsInputPath).save(buffer)
 
-        const pdfDoc = await PDFDocument.load(buffer)
-        const totalPages = pdfDoc.getPageCount()
-        console.log(`Total pages: ${totalPages}`)
-
-        let fullText = ''
-        const chunkSize = 15
-
+        // 3. Document AI Batch Process
         const name = `projects/${projectId}/locations/${location}/processors/${processorId}`
+        const inputGcsUri = `gs://${bucketName}/${gcsInputPath}`
+        const outputGcsUri = `gs://${bucketName}/${gcsOutputPrefix}`
 
-        for (let i = 0; i < totalPages; i += chunkSize) {
-            const end = Math.min(i + chunkSize, totalPages)
-            console.log(`[${new Date().toISOString()}] Processing pages ${i + 1} to ${end}...`)
-
-            const subDoc = await PDFDocument.create()
-            const copiedPages = await subDoc.copyPages(pdfDoc, Array.from({ length: end - i }, (_, k) => i + k))
-            copiedPages.forEach(page => subDoc.addPage(page))
-            const subBuffer = await subDoc.save()
-            const subBase64 = Buffer.from(subBuffer).toString('base64')
-
-            const request = {
-                name,
-                rawDocument: {
-                    content: subBase64,
-                    mimeType: 'application/pdf'
+        const request = {
+            name,
+            inputDocuments: {
+                gcsDocuments: {
+                    documents: [
+                        {
+                            gcsUri: inputGcsUri,
+                            mimeType: 'application/pdf'
+                        }
+                    ]
+                }
+            },
+            documentOutputConfig: {
+                gcsOutputConfig: {
+                    gcsUri: outputGcsUri
                 }
             }
+        }
 
-            try {
-                const [result] = await docAIClient.processDocument(request)
-                const text = result.document?.text || ''
-                fullText += text + '\n'
-            } catch (chunkErr) {
-                console.error(`Error processing chunk ${i}-${end}:`, chunkErr)
-                // Continue with other chunks? Or fail?
-                // Better to continue and get partial results than nothing.
+        console.log(`[${new Date().toISOString()}] Starting Batch Processing...`)
+        const [operation] = await docAIClient.batchProcessDocuments(request)
+        console.log(`[${new Date().toISOString()}] Operation started: ${operation.name}`)
+
+        // Wait for completion
+        await operation.promise()
+        console.log(`[${new Date().toISOString()}] Batch Processing Completed.`)
+
+        // 4. Download & Parse Results
+        console.log(`[${new Date().toISOString()}] Fetching results from GCS...`)
+        const [files] = await bucket.getFiles({ prefix: gcsOutputPrefix })
+
+        let fullText = ''
+
+        // Document AI output is sharded JSONs
+        const jsonFiles = files.filter(f => f.name.endsWith('.json'))
+
+        // Sort files to ensure order (optional but good practice)
+        jsonFiles.sort((a, b) => a.name.localeCompare(b.name))
+
+        for (const file of jsonFiles) {
+            const [content] = await file.download()
+            const result = JSON.parse(content.toString())
+            if (result.text) {
+                fullText += result.text
             }
         }
 
         console.log(`Extracted ${fullText.length} characters.`)
 
-        // 3. Generate Gemini Summary
+        // 5. Generate Gemini Summary
         console.log('Generating Gemini Summary...')
         // Truncate if too long? Gemini 2.0 has large context (1M tokens).
         // 80 pages of text is fine.
@@ -237,6 +254,15 @@ ${fullText}
             .eq('id', tender_id)
 
         console.log('Tender Profile Updated.')
+
+        // 7. Cleanup GCS
+        try {
+            await bucket.file(gcsInputPath).delete()
+            await bucket.deleteFiles({ prefix: gcsOutputPrefix })
+            console.log('GCS Cleanup successful.')
+        } catch (e) {
+            console.warn('GCS Cleanup failed:', e)
+        }
 
     } catch (err: any) {
         console.error('ProcessTender Failed:', err)
