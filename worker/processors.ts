@@ -5,7 +5,6 @@ import { DocumentProcessorServiceClient } from '@google-cloud/documentai'
 import { Storage } from '@google-cloud/storage'
 import path from 'path'
 import fs from 'fs'
-
 // Initialize Supabase Admin Client
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -15,6 +14,14 @@ const supabase = createClient(supabaseUrl, supabaseServiceKey)
 const GOOGLE_KEY_FILE = path.resolve('service-account.json')
 if (fs.existsSync(GOOGLE_KEY_FILE)) {
     process.env.GOOGLE_APPLICATION_CREDENTIALS = GOOGLE_KEY_FILE
+} else if (process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON) {
+    try {
+        fs.writeFileSync(GOOGLE_KEY_FILE, process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON);
+        process.env.GOOGLE_APPLICATION_CREDENTIALS = GOOGLE_KEY_FILE
+        console.log('Created service-account.json from env var');
+    } catch (e) {
+        console.error('Failed to create service-account.json', e);
+    }
 } else {
     console.warn('Google Service Account JSON not found at', GOOGLE_KEY_FILE)
 }
@@ -121,10 +128,10 @@ Page Number: ${img.pageNumber}
 
 export async function processTender(job: any) {
     const { tender_id, company_id, file_path } = job.payload
-    console.log(`Processing Tender (DocAI Batch): ${tender_id}`)
+    console.log(`Processing Tender (DocAI Batch GCS): ${tender_id}`)
 
-    const bucketName = `tender-ai-processing-${projectId}`
-    const gcsInputPath = `inputs/${tender_id}.pdf`
+    const bucketName = 'tendor_ai_bckt'
+    const gcsInputPath = `inputs/${tender_id}/document.pdf`
     const gcsOutputPrefix = `outputs/${tender_id}/`
 
     try {
@@ -137,14 +144,8 @@ export async function processTender(job: any) {
 
         const buffer = Buffer.from(await fileData.arrayBuffer())
 
-        // 2. Ensure Bucket Exists & Upload to GCS
+        // 2. Upload to GCS
         const bucket = storage.bucket(bucketName)
-        const [exists] = await bucket.exists()
-        if (!exists) {
-            console.log(`Creating bucket ${bucketName}...`)
-            await bucket.create({ location })
-        }
-
         console.log(`Uploading to GCS: gs://${bucketName}/${gcsInputPath}`)
         await bucket.file(gcsInputPath).save(buffer)
 
@@ -172,16 +173,16 @@ export async function processTender(job: any) {
             }
         }
 
-        console.log('Starting Batch Processing...')
+        console.log(`[${new Date().toISOString()}] Starting Batch Processing...`)
         const [operation] = await docAIClient.batchProcessDocuments(request)
-        console.log(`Operation started: ${operation.name}`)
+        console.log(`[${new Date().toISOString()}] Operation started: ${operation.name}`)
 
         // Wait for completion
         await operation.promise()
-        console.log('Batch Processing Completed.')
+        console.log(`[${new Date().toISOString()}] Batch Processing Completed.`)
 
         // 4. Download & Parse Results
-        console.log('Fetching results from GCS...')
+        console.log(`[${new Date().toISOString()}] Fetching results from GCS...`)
         const [files] = await bucket.getFiles({ prefix: gcsOutputPrefix })
 
         let fullText = ''
@@ -189,8 +190,8 @@ export async function processTender(job: any) {
         // Document AI output is sharded JSONs
         const jsonFiles = files.filter(f => f.name.endsWith('.json'))
 
-        // We need to sort them, but usually they contain page info.
-        // Actually, Document AI output files might be named differently but iterating them is fine.
+        // Sort files to ensure order (optional but good practice)
+        jsonFiles.sort((a, b) => a.name.localeCompare(b.name))
 
         for (const file of jsonFiles) {
             const [content] = await file.download()
@@ -254,8 +255,7 @@ ${fullText}
 
         console.log('Tender Profile Updated.')
 
-        // 7. Cleanup GCS (Optional but good)
-        // Delete input and output
+        // 7. Cleanup GCS
         try {
             await bucket.file(gcsInputPath).delete()
             await bucket.deleteFiles({ prefix: gcsOutputPrefix })
