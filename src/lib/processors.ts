@@ -108,6 +108,46 @@ async function cleanupGCS(gcsInputPath: string, gcsOutputPrefix: string) {
     }
 }
 
+// --- INTELLIGENCE & EVALUATION ---
+
+export async function evaluateEligibility(sections: any, companyProfile: any) {
+    console.log('Evaluating Eligibility...')
+    const prompt = `
+You are an expert tender evaluator.
+Evaluate if the company is eligible for the tender based strictly on the provided criteria.
+
+Input Data:
+1. Eligibility Criteria: "${sections['Eligibility Criteria']}"
+2. Evaluation Criteria: "${sections['Evaluation Criteria']}"
+3. Company Profile: ${JSON.stringify(companyProfile)}
+
+Task:
+Determine eligibility and identify risks.
+
+Output JSON Structure:
+{
+  "eligible": boolean,
+  "reasons": string[],
+  "missing_requirements": string[],
+  "risk_flags": string[]
+}
+
+Rules:
+- If company meets all criteria -> eligible: true
+- If ANY mandatory criteria is failed/missing -> eligible: false
+- Be strict but fair.
+- Use only provided information.
+`
+    try {
+        const result = await generateJSON(prompt)
+        return result
+    } catch (error) {
+        console.error('Eligibility Evaluation Failed:', error)
+        return { eligible: false, reasons: ['AI evaluation failed'], missing_requirements: [], risk_flags: [] }
+    }
+}
+
+
 // --- PROCESSORS ---
 
 export interface ProcessPayload {
@@ -226,53 +266,131 @@ Extract the following if present:
 }
 
 export async function processTender(job: ProcessPayload) {
-    const { tender_id, file_path } = job.payload
-    console.log(`Processing Tender (DocAI Batch GCS): ${tender_id}`)
+    // accept file_paths (array) or file_path (legacy string)
+    const { tender_id, file_path, file_paths } = job.payload
 
-    const gcsInputPath = `inputs/${tender_id}/document.pdf`
-    const gcsOutputPrefix = `outputs/${tender_id}/`
+    // Normalize file_paths
+    let files: string[] = []
+    if (Array.isArray(file_paths)) {
+        files = file_paths
+    } else if (typeof file_path === 'string') {
+        files = [file_path]
+    }
+
+    console.log(`Processing Tender (DocAI Batch GCS): ${tender_id}, Files: ${files.length}`)
+
+    let mergedFullText = ''
 
     try {
-        // 1. Download from Supabase
-        const { data: fileData, error: downloadError } = await supabase.storage
-            .from('tender-docs')
-            .download(file_path)
+        // --- STEP 1: MULTI-PDF HANDLING ---
+        for (const filePath of files) {
+            const filename = path.basename(filePath)
+            // Use simple safe name for GCS to avoid path issues
+            const safeFilename = filename.replace(/[^a-zA-Z0-9.-]/g, '_')
+            const gcsInputPath = `inputs/${tender_id}/${safeFilename}`
+            // Unique output prefix for each file
+            const gcsOutputPrefix = `outputs/${tender_id}/${safeFilename}/`
 
-        if (downloadError) throw downloadError
+            console.log(`Processing file: ${filename}`)
 
-        const buffer = Buffer.from(await fileData.arrayBuffer())
+            // 1. Download from Supabase
+            const { data: fileData, error: downloadError } = await supabase.storage
+                .from('tender-docs')
+                .download(filePath)
 
-        // 2. Upload to GCS
-        await uploadBufferToGCS(buffer, gcsInputPath)
+            if (downloadError) throw downloadError
 
-        // 3. Batch Process
-        await runBatchProcessing(gcsInputPath, gcsOutputPrefix)
+            const buffer = Buffer.from(await fileData.arrayBuffer())
 
-        // 4. Extract Full Text
-        const fullText = await extractTextFromGCS(gcsOutputPrefix)
+            // 2. Upload to GCS
+            await uploadBufferToGCS(buffer, gcsInputPath)
 
-        // 5. Generate Gemini Summary
-        console.log('Generating Gemini Summary...')
-        const summaryPrompt = `
-You are a tender analyst.
-Summarize the following tender document text into a concise executive summary.
-Highlight:
-1. Scope of Work
-2. Key Qualifications (Financial/Technical)
-3. Important Dates (if found)
+            // 3. Batch Process
+            await runBatchProcessing(gcsInputPath, gcsOutputPrefix)
 
-Text:
-${fullText}
-`
-        let summary = ''
-        try {
-            summary = await generateText(summaryPrompt)
-        } catch (err) {
-            console.error('Gemini Summary Failed:', err)
-            summary = 'Summary generation failed.'
+            // 4. Extract Text
+            const text = await extractTextFromGCS(gcsOutputPrefix)
+
+            // Merge with delimiter
+            mergedFullText += `\n===== DOCUMENT: ${filename} =====\n${text}\n`
+
+            // Cleanup this file's artifacts immediately to save space/cost
+            await cleanupGCS(gcsInputPath, gcsOutputPrefix)
         }
 
-        // 6. Update Tender Profile
+        // --- STEP 2: SECTION CLASSIFICATION ---
+        console.log('Classifying text into 12 categories...')
+        const classificationPrompt = `
+You are a tender analyst.
+
+Task: Classify the following tender text into 12 fixed categories.
+
+Structure:
+{
+  "Eligibility Criteria": "",
+  "Pre-Bid Meeting": "",
+  "Evaluation Criteria": "",
+  "Required Documents": "",
+  "Scope Of Work": "",
+  "EMD Fee": "",
+  "Relaxations": "",
+  "Payment Terms": "",
+  "BOQ Requirements": "",
+  "Risks": "",
+  "Redlining": "",
+  "Annexures": "",
+  "Uncategorized": ""
+}
+
+Rules:
+- Do NOT summarize.
+- Do NOT rewrite.
+- Do NOT infer.
+- Copy exact relevant text from the source.
+- If a category has no content, return empty string.
+- Output VALID JSON ONLY.
+
+Text:
+${mergedFullText}
+`
+        let sections: any = {}
+        try {
+            sections = await generateJSON(classificationPrompt)
+        } catch (err) {
+            console.error('Classification Failed:', err)
+            throw new Error('Tender classification failed')
+        }
+
+        // --- STEP 6: REQUIRED DOCUMENT EXTRACTION ---
+        console.log('Extracting Required Documents...')
+        const reqDocsPrompt = `
+From the text provided below (which is the "Required Documents" section of a tender), extract a structured list of documents.
+
+Text:
+${sections['Required Documents'] || ''}
+
+Output JSON:
+[
+  {
+    "name": "Document Name",
+    "description": "Brief description or details",
+    "mandatory": true
+  }
+]
+
+If no documents found, return empty array.
+`
+        let requiredDocuments: any[] = []
+        try {
+            requiredDocuments = await generateJSON(reqDocsPrompt)
+        } catch (err) {
+            console.error('Req Docs Extraction Failed:', err)
+            // Non-fatal, return empty
+            requiredDocuments = []
+        }
+
+        // --- STEP 3: STORE STRUCTURED STATE ---
+        // Fetch current to preserve anything if needed (though we mostly overwrite)
         const { data: currentTender } = await supabase
             .from('tender_profiles')
             .select('metadata')
@@ -286,27 +404,22 @@ ${fullText}
             .update({
                 metadata: {
                     ...currentMetadata,
-                    extracted_text: fullText,
-                    summary: summary
+                    extracted_text: mergedFullText,
+                    sections: sections,
+                    required_documents: requiredDocuments,
+                    eligibility_result: null // Reset eligibility as content changed
                 },
                 processed: true,
-                clauses: []
+                clauses: [] // Clear old clauses if any
             })
             .eq('id', tender_id)
 
-        console.log('Tender Profile Updated.')
+        console.log('Tender Profile Updated with Structured Data.')
 
-        // 7. Cleanup
-        await cleanupGCS(gcsInputPath, gcsOutputPrefix)
-
-        return { success: true, message: 'Processing complete', summary }
+        return { success: true, message: 'Processing complete', sections }
 
     } catch (err: any) {
         console.error('ProcessTender Failed:', err)
-        // We might want to mark it as failed in DB if there was a status field,
-        // but tender_profiles uses 'processed' boolean.
-        // We could leave it false or add an error field.
-        // For now, rethrow so the API returns error.
         throw err
     }
 }

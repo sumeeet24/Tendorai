@@ -6,18 +6,18 @@ export const maxDuration = 300; // Allow 5 minutes for processing
 export async function POST(req: Request) {
   try {
     const body = await req.json()
-    const { tender_id, file_path } = body
+    const { tender_id, file_path, file_paths } = body
 
-    if (!tender_id || !file_path) {
-      return NextResponse.json({ error: 'Missing tender_id or file_path' }, { status: 400 })
+    // Validate that we have a tender_id and at least one file source
+    if (!tender_id || (!file_path && (!file_paths || !Array.isArray(file_paths) || file_paths.length === 0))) {
+      return NextResponse.json({ error: 'Missing tender_id or file_paths' }, { status: 400 })
     }
 
     console.log(`[API] Starting synchronous tender processing for ${tender_id}...`)
 
-    // Call the processor directly
-    // We await it to make it synchronous as requested.
+    // Pass everything to the processor, which handles normalization
     const result = await processTender({
-      payload: { tender_id, file_path }
+      payload: { tender_id, file_path, file_paths }
     })
 
     return NextResponse.json(result)

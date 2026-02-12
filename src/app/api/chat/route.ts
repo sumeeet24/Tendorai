@@ -10,19 +10,33 @@ export async function POST(req: Request) {
     return new NextResponse('Unauthorized', { status: 401 })
   }
 
-  const { message, tenderId, context } = await req.json()
+  try {
+    const { message, tenderId, context } = await req.json()
 
-  // Verify ownership
-  // We trust the context provided by client? NO. We should fetch it or at least verify tenderId.
-  // Fetching context on server is safer.
+    // Fetch context data
+    const { data: tender } = await supabase.from('tender_profiles').select('*').eq('id', tenderId).single()
+    const { data: company } = await supabase.from('company_profiles').select('*').eq('owner_id', user.id).single()
 
-  const { data: tender } = await supabase.from('tender_profiles').select('*').eq('id', tenderId).single()
-  const { data: company } = await supabase.from('company_profiles').select('*').eq('owner_id', user.id).single()
-  const { data: eligibility } = await supabase.from('eligibility_results').select('*').eq('tender_id', tenderId).single()
+    // Attempt to fetch legacy eligibility result, but we prefer metadata
+    const { data: legacyEligibility } = await supabase.from('eligibility_results').select('*').eq('tender_id', tenderId).single()
 
-  if (!tender) return new NextResponse('Tender not found', { status: 404 })
+    if (!tender) return new NextResponse('Tender not found', { status: 404 })
 
-  const systemPrompt = `
+    const metadata = tender.metadata as any || {}
+    const sections = metadata.sections || {}
+
+    // Construct focused context from structured sections
+    const tenderContext = {
+        id: tender.id,
+        title: tender.title,
+        sections: sections,
+        required_documents: metadata.required_documents || []
+    }
+
+    // Prefer metadata eligibility result, fallback to legacy table
+    const eligibilityContext = metadata.eligibility_result || legacyEligibility || null
+
+    const systemPrompt = `
 You are an assistant for tender analysis.
 
 You are NOT allowed to:
@@ -38,20 +52,20 @@ You MAY:
 - Draft text when explicitly requested
 
 Rules:
-- Reference clause IDs and page numbers
+- Reference clause IDs (if available in sections) and specifics
 - If information is missing, say "Information not available"
 - Never guess
+- Use the structured sections provided in the context for all reasoning.
 
 Context:
-Tender Profile: ${JSON.stringify(tender)}
+Tender Profile: ${JSON.stringify(tenderContext)}
 Company Profile: ${JSON.stringify(company)}
-Eligibility Result: ${JSON.stringify(eligibility)}
+Eligibility Result: ${JSON.stringify(eligibilityContext)}
 UI State: ${JSON.stringify(context?.uiState || {})}
 
 User Message: ${message}
 `
 
-  try {
       const response = await generateText(systemPrompt)
       return NextResponse.json({ response })
   } catch (error) {

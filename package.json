@@ -13,7 +13,7 @@
     "@google-cloud/storage": "^7.19.0",
     "@google/generative-ai": "^0.24.1",
     "@supabase/ssr": "^0.8.0",
-    "@supabase/supabase-js": "^2.93.2",
+    "@supabase/supabase-js": "^2.95.3",
     "@types/pg": "^8.16.0",
     "clsx": "^2.1.1",
     "dotenv": "^17.2.3",
