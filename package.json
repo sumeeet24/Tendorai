@@ -6,8 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint",
-    "worker": "tsx worker/index.ts"
+    "lint": "next lint"
   },
   "dependencies": {
     "@google-cloud/documentai": "^9.5.0",

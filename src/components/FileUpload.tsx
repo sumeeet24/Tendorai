@@ -62,21 +62,25 @@ export default function FileUpload({ label, documentType, onUploadComplete, owne
 
       if (docError) throw docError
 
-      // 3. Trigger Job
-      const { error: jobError } = await supabase
-        .from('jobs')
-        .insert({
-          type: 'PROCESS_COMPANY_DOC',
-          payload: {
-            document_id: docData.id,
-            company_id: companyId,
-            owner_id: ownerId,
-            file_path: filePath,
-            document_type: documentType
-          }
+      // 3. Trigger Processing via API
+      const processRes = await fetch('/api/process-company-doc', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          document_id: docData.id,
+          company_id: companyId,
+          owner_id: ownerId,
+          file_path: filePath,
+          document_type: documentType
         })
+      })
 
-      if (jobError) throw jobError
+      if (!processRes.ok) {
+        const errorData = await processRes.json()
+        throw new Error(errorData.error || 'Processing failed')
+      }
 
       setStatus('success')
       setFile(null)

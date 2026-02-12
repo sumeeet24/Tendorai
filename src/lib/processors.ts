@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
-import { generateJSON, generateText } from '../src/lib/gemini.js'
+import { generateJSON, generateText } from './gemini'
 import { DocumentProcessorServiceClient } from '@google-cloud/documentai'
 import { Storage } from '@google-cloud/storage'
 import path from 'path'
@@ -11,14 +11,16 @@ const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!.trim()
 const supabase = createClient(supabaseUrl, supabaseServiceKey)
 
 // Initialize Google Clients
-const GOOGLE_KEY_FILE = path.resolve('service-account.json')
+// Use /tmp for Vercel/Serverless environment
+const GOOGLE_KEY_FILE = path.join('/tmp', 'service-account.json')
+
 if (fs.existsSync(GOOGLE_KEY_FILE)) {
     process.env.GOOGLE_APPLICATION_CREDENTIALS = GOOGLE_KEY_FILE
 } else if (process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON) {
     try {
         fs.writeFileSync(GOOGLE_KEY_FILE, process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON);
         process.env.GOOGLE_APPLICATION_CREDENTIALS = GOOGLE_KEY_FILE
-        console.log('Created service-account.json from env var');
+        console.log('Created service-account.json from env var in /tmp');
     } catch (e) {
         console.error('Failed to create service-account.json', e);
     }
@@ -108,7 +110,11 @@ async function cleanupGCS(gcsInputPath: string, gcsOutputPrefix: string) {
 
 // --- PROCESSORS ---
 
-export async function processCompanyDoc(job: any) {
+export interface ProcessPayload {
+    payload: any
+}
+
+export async function processCompanyDoc(job: ProcessPayload) {
     const { document_id, company_id, file_path } = job.payload
     console.log(`Processing Company Doc: ${document_id}`)
 
@@ -203,13 +209,23 @@ Extract the following if present:
         // 8. Cleanup
         await cleanupGCS(gcsInputPath, gcsOutputPrefix)
 
+        return { success: true, message: 'Processing complete', data: mergedData }
+
     } catch (err: any) {
         console.error('ProcessCompanyDoc Failed:', err)
+        // Update status to failed
+        await supabase
+            .from('document_uploads')
+            .update({
+                processing_status: 'failed'
+            })
+            .eq('id', document_id)
+
         throw err
     }
 }
 
-export async function processTender(job: any) {
+export async function processTender(job: ProcessPayload) {
     const { tender_id, file_path } = job.payload
     console.log(`Processing Tender (DocAI Batch GCS): ${tender_id}`)
 
@@ -283,8 +299,14 @@ ${fullText}
         // 7. Cleanup
         await cleanupGCS(gcsInputPath, gcsOutputPrefix)
 
+        return { success: true, message: 'Processing complete', summary }
+
     } catch (err: any) {
         console.error('ProcessTender Failed:', err)
+        // We might want to mark it as failed in DB if there was a status field,
+        // but tender_profiles uses 'processed' boolean.
+        // We could leave it false or add an error field.
+        // For now, rethrow so the API returns error.
         throw err
     }
 }

@@ -68,19 +68,22 @@ export default function CreateTenderForm({ companyId, userId }: Props) {
 
       if (tenderError) throw tenderError
 
-      // 3. Trigger Job
-      const { error: jobError } = await supabase
-        .from('jobs')
-        .insert({
-          type: 'PROCESS_TENDER',
-          payload: {
-            tender_id: tenderData.id,
-            company_id: companyId,
-            file_path: storageData.path
-          }
+      // 3. Trigger Processing via API
+      const processRes = await fetch('/api/process-tender', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          tender_id: tenderData.id,
+          file_path: storageData.path
         })
+      })
 
-      if (jobError) throw jobError
+      if (!processRes.ok) {
+        const errorData = await processRes.json()
+        throw new Error(errorData.error || 'Processing failed')
+      }
 
       // 4. Redirect
       router.push(`/tenders/${tenderData.id}`)
