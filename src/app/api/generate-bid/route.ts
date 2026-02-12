@@ -10,34 +10,48 @@ export async function POST(req: Request) {
     return new NextResponse('Unauthorized', { status: 401 })
   }
 
-  const { tenderId, type } = await req.json() // type: 'technical' or 'compliance'
+  try {
+      const { tenderId, type } = await req.json() // type: 'technical' or 'compliance'
 
-  const { data: tender } = await supabase.from('tender_profiles').select('*').eq('id', tenderId).single()
-  const { data: company } = await supabase.from('company_profiles').select('*').eq('owner_id', user.id).single()
-  const { data: eligibility } = await supabase.from('eligibility_results').select('*').eq('tender_id', tenderId).single()
+      const { data: tender } = await supabase.from('tender_profiles').select('*').eq('id', tenderId).single()
+      const { data: company } = await supabase.from('company_profiles').select('*').eq('owner_id', user.id).single()
+      const { data: legacyEligibility } = await supabase.from('eligibility_results').select('*').eq('tender_id', tenderId).single()
 
-  if (!tender) return new NextResponse('Tender not found', { status: 404 })
+      if (!tender) return new NextResponse('Tender not found', { status: 404 })
 
-  const prompt = `
+      const metadata = tender.metadata as any || {}
+      const sections = metadata.sections || {}
+
+      // Prefer structured sections
+      const tenderContext = {
+          id: tender.id,
+          title: tender.title,
+          sections: sections,
+          required_documents: metadata.required_documents || []
+      }
+
+      // Prefer metadata eligibility result, fallback to legacy
+      const eligibilityContext = metadata.eligibility_result || legacyEligibility || null
+
+      const prompt = `
 You are generating a technical bid draft.
 
 Rules:
-- Use ONLY provided data
+- Use ONLY provided data (specifically the sections)
 - DO NOT invent experience or numbers
 - If data is missing, insert [TO BE PROVIDED]
 - Write in formal tender language
 - Output structured sections
 
 Context:
-Tender: ${JSON.stringify(tender)}
+Tender: ${JSON.stringify(tenderContext)}
 Company: ${JSON.stringify(company)}
-Eligibility: ${JSON.stringify(eligibility)}
+Eligibility: ${JSON.stringify(eligibilityContext)}
 
 Task: Generate a ${type === 'compliance' ? 'Compliance Statement' : 'Technical Proposal'}.
 Output JSON format: { "title": "...", "content": "..." }
 `
 
-  try {
       const result = await generateJSON(prompt)
       return NextResponse.json(result)
   } catch (error) {
