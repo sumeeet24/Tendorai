@@ -24,16 +24,36 @@ export default function SectionsTab({ tender, onSectionSelect, selectedSectionKe
               key,
               title: key,
               content: '',
+              analysis: '',
+              key_points: [],
               page_numbers: [],
               risk_level: undefined,
               compliance_status: undefined
           }
       }
+
+      // Handle legacy string data
+      if (typeof section === 'string') {
+          return {
+              key,
+              title: key,
+              content: section,
+              analysis: '',
+              key_points: [],
+              page_numbers: [],
+              risk_level: undefined,
+              compliance_status: undefined
+          }
+      }
+
+      // Handle structured object data
       return {
           key,
           ...section,
           title: section.title || key,
           content: section.content || '',
+          analysis: section.analysis || '',
+          key_points: section.key_points || [],
           page_numbers: section.page_numbers || []
       }
     }).sort((a, b) => {
@@ -132,20 +152,41 @@ export default function SectionsTab({ tender, onSectionSelect, selectedSectionKe
 
                     {/* Content Viewer (Only if expanded) */}
                     {selectedSectionKey === section.key && (
-                        <div className="p-4 border-t bg-white">
-                            <div className="bg-gray-50 p-3 rounded text-xs font-mono text-gray-700 whitespace-pre-wrap max-h-96 overflow-auto border border-gray-200">
-                                {section.content}
+                        <div className="p-4 border-t bg-white space-y-4">
+                             {/* Analysis Section */}
+                             {section.analysis && (
+                                 <div className="bg-indigo-50 p-4 rounded-lg border border-indigo-100">
+                                     <h4 className="text-sm font-semibold text-indigo-900 mb-2 flex items-center gap-2">
+                                         <Info className="w-4 h-4"/> AI Analysis
+                                     </h4>
+                                     <p className="text-sm text-indigo-800 leading-relaxed">{section.analysis}</p>
+                                     {section.key_points && section.key_points.length > 0 && (
+                                         <ul className="mt-3 list-disc list-inside text-xs text-indigo-700 space-y-1">
+                                             {section.key_points.map((pt: string, i: number) => (
+                                                 <li key={i}>{pt}</li>
+                                             ))}
+                                         </ul>
+                                     )}
+                                 </div>
+                             )}
+
+                            {/* Raw Content */}
+                            <div>
+                                <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Original Text</h4>
+                                <div className="bg-gray-50 p-3 rounded text-xs font-mono text-gray-700 whitespace-pre-wrap max-h-96 overflow-auto border border-gray-200">
+                                    {section.content}
+                                </div>
                             </div>
+
                             <div className="mt-2 flex justify-end gap-2">
                                 <button
                                     className="text-indigo-600 text-xs font-medium hover:underline flex items-center gap-1"
                                     onClick={(e) => {
                                         e.stopPropagation()
-                                        // Could open a modal or trigger analysis
-                                        console.log("Analyze section:", section.key)
+                                        console.log("Re-analyze section:", section.key)
                                     }}
                                 >
-                                    Analyze with AI <ChevronRight className="w-3 h-3"/>
+                                    Re-Analyze <ChevronRight className="w-3 h-3"/>
                                 </button>
                             </div>
                         </div>

@@ -88,6 +88,8 @@ export interface Section {
   page_numbers: number[]
   risk_level?: 'low' | 'medium' | 'high'
   compliance_status?: 'compliant' | 'non_compliant' | 'review_needed'
+  analysis?: string
+  key_points?: string[]
 }
 
 export interface RequiredDocument {
