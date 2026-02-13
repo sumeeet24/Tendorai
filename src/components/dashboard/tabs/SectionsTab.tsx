@@ -17,21 +17,39 @@ export default function SectionsTab({ tender, onSectionSelect, selectedSectionKe
   // Convert sections object to array for easier rendering
   const sectionList = useMemo(() => {
     if (!sections) return []
-    return Object.entries(sections).map(([key, section]) => ({
-      key,
-      ...section
-    })).sort((a, b) => {
+    return Object.entries(sections).map(([key, section]) => {
+      // Handle potentially null/undefined section or properties
+      if (!section) {
+          return {
+              key,
+              title: key,
+              content: '',
+              page_numbers: [],
+              risk_level: undefined,
+              compliance_status: undefined
+          }
+      }
+      return {
+          key,
+          ...section,
+          title: section.title || key,
+          content: section.content || '',
+          page_numbers: section.page_numbers || []
+      }
+    }).sort((a, b) => {
         // Try to sort by section number/title logic if possible, otherwise alphabetical
         // Assuming key might be "1. Introduction" etc.
-        return a.title.localeCompare(b.title, undefined, { numeric: true })
+        const titleA = a.title || ''
+        const titleB = b.title || ''
+        return titleA.localeCompare(titleB, undefined, { numeric: true })
     })
   }, [sections])
 
   const filteredSections = useMemo(() => {
     if (!searchTerm) return sectionList
     return sectionList.filter(s =>
-        s.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        s.content.toLowerCase().includes(searchTerm.toLowerCase())
+        (s.title || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (s.content || '').toLowerCase().includes(searchTerm.toLowerCase())
     )
   }, [sectionList, searchTerm])
 
