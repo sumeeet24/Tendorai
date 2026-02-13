@@ -34,17 +34,19 @@ export default function RequiredDocumentsTab({ tender, companyId, userId, onUpda
     setUploadingDoc(null)
   }
 
-  const handleGenerateDraft = async (docName: string) => {
+  const handleGenerateDraft = async (doc: RequiredDocument) => {
+    const docName = doc.name
     setGeneratingDraft(docName)
     try {
-      // We pass the document name as context so the backend can (eventually) use it
+      // Pass the document name AND raw clause
       const response = await fetch('/api/generate-bid', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
             tenderId: tender.id,
             type: 'technical',
-            requirement: docName // Passing this for future backend support
+            requirement: docName,
+            rawClause: doc.raw_clause // New field
         })
       })
 
@@ -99,6 +101,9 @@ export default function RequiredDocumentsTab({ tender, companyId, userId, onUpda
                     <h3 className="font-medium text-gray-900">{doc.name}</h3>
                   </div>
                   <p className="text-sm text-gray-500 mt-1">{doc.description || "No description available."}</p>
+                  {doc.raw_clause && (
+                      <p className="text-xs text-gray-400 mt-1 italic line-clamp-2" title={doc.raw_clause}>"{doc.raw_clause}"</p>
+                  )}
 
                   {/* Status Details */}
                   <div className="mt-3 flex flex-wrap gap-4 text-xs">
@@ -129,7 +134,7 @@ export default function RequiredDocumentsTab({ tender, companyId, userId, onUpda
 
                     {!isUploaded && !isDrafted && (
                         <button
-                            onClick={() => handleGenerateDraft(doc.name)}
+                            onClick={() => handleGenerateDraft(doc)}
                             disabled={generatingDraft === doc.name}
                             className="flex items-center justify-center gap-2 px-3 py-2 bg-indigo-50 text-indigo-700 rounded-md hover:bg-indigo-100 text-sm font-medium transition-colors disabled:opacity-50"
                         >

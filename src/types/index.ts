@@ -76,7 +76,8 @@ export interface TenderMetadata {
   sections?: Record<string, Section> // Key is section title or ID
   required_documents?: RequiredDocument[]
   eligibility_result?: EligibilityResult | null // Optional here as it might be stored in metadata too
-  risk_analysis?: any
+  risk_analysis?: any // Deprecated or kept for backward compat
+  risks?: RiskItem[] // New from spec
   drafts?: Record<string, Draft> // requirement_name -> Draft
   uploads?: Record<string, UploadLink> // requirement_name -> UploadLink
 }
@@ -94,16 +95,38 @@ export interface RequiredDocument {
   description?: string
   type?: string // 'financial', 'technical', etc.
   mandatory?: boolean
+  raw_clause?: string
 }
 
 export interface EligibilityResult {
   id?: string // If from table
   tender_id?: string
   company_id?: string
-  status: 'ELIGIBLE' | 'NOT_ELIGIBLE' | 'PARTIAL' | 'PENDING'
-  failed_clauses: FailedClause[]
-  confidence: number
+  status?: 'ELIGIBLE' | 'NOT_ELIGIBLE' | 'PARTIAL' | 'PENDING'
+
+  // New structure
+  eligible?: boolean
+  matched_requirements?: MatchedRequirement[]
+  failed_requirements?: any[]
+  unknown_requirements?: any[]
+  confidence: string | number // "low"|"medium"|"high" or number
+
+  // Legacy
+  failed_clauses?: FailedClause[]
+
   created_at?: string
+}
+
+export interface MatchedRequirement {
+  requirement: string
+  evidence_from_company: string
+  evidence_from_tender: string
+}
+
+export interface RiskItem {
+  risk_type: string
+  clause: string
+  severity: 'low' | 'medium' | 'high'
 }
 
 export interface FailedClause {

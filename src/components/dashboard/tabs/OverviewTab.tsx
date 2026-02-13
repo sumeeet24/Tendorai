@@ -11,13 +11,24 @@ export default function OverviewTab({ tender, eligibility }: OverviewTabProps) {
   const summary = metadata.summary || "Summary not available."
   const eligibilityResult = metadata.eligibility_result || eligibility
 
-  // Extract risks from sections if no explicit risk analysis exists
-  // For now, let's use failed clauses as risks if available
-  const risks = eligibilityResult?.failed_clauses || []
+  // Handle Risks
+  // New risks array from metadata or fallback to failed clauses
+  const risks = metadata.risks || []
+  const failedClauses = eligibilityResult?.failed_clauses || []
 
   // Helper to determine status color/icon
-  const getEligibilityStatus = (status?: string) => {
-    switch (status) {
+  const getEligibilityStatus = (result: EligibilityResult | null) => {
+    if (!result) return { color: 'text-gray-600', bg: 'bg-gray-50', icon: Info, label: 'Pending Analysis' }
+
+    // Check new 'eligible' boolean first
+    if (result.eligible === true) {
+        return { color: 'text-green-600', bg: 'bg-green-50', icon: CheckCircle, label: 'Eligible' }
+    } else if (result.eligible === false) {
+        return { color: 'text-red-600', bg: 'bg-red-50', icon: XCircle, label: 'Not Eligible' }
+    }
+
+    // Fallback to old 'status' field
+    switch (result.status) {
       case 'ELIGIBLE':
         return { color: 'text-green-600', bg: 'bg-green-50', icon: CheckCircle, label: 'Eligible' }
       case 'NOT_ELIGIBLE':
@@ -25,12 +36,22 @@ export default function OverviewTab({ tender, eligibility }: OverviewTabProps) {
       case 'PARTIAL':
         return { color: 'text-yellow-600', bg: 'bg-yellow-50', icon: AlertTriangle, label: 'Partially Eligible' }
       default:
-        return { color: 'text-gray-600', bg: 'bg-gray-50', icon: Info, label: 'Pending Analysis' }
+        // Requirement: Remove "Pending Analysis" if possible, but if result is null, we must show something.
+        // If we have no result at all, maybe "Analysis Required"
+        return { color: 'text-gray-600', bg: 'bg-gray-50', icon: Info, label: 'Analysis Required' }
     }
   }
 
-  const status = getEligibilityStatus(eligibilityResult?.status)
+  const status = getEligibilityStatus(eligibilityResult)
   const StatusIcon = status.icon
+
+  // Format confidence
+  const getConfidenceDisplay = (conf: string | number | undefined) => {
+      if (conf === undefined || conf === null) return null
+      if (typeof conf === 'number') return `${(conf * 100).toFixed(0)}%`
+      return conf.charAt(0).toUpperCase() + conf.slice(1) // "high" -> "High"
+  }
+  const confidenceDisplay = getConfidenceDisplay(eligibilityResult?.confidence)
 
   return (
     <div className="space-y-6">
@@ -40,9 +61,11 @@ export default function OverviewTab({ tender, eligibility }: OverviewTabProps) {
             <StatusIcon className={`w-8 h-8 ${status.color}`} />
             <h2 className={`text-xl font-bold ${status.color}`}>{status.label}</h2>
         </div>
-        <p className="text-gray-700">
-            Confidence Score: <span className="font-semibold">{eligibilityResult?.confidence ? `${(eligibilityResult.confidence * 100).toFixed(0)}%` : 'N/A'}</span>
-        </p>
+        {confidenceDisplay && (
+            <p className="text-gray-700">
+                Confidence: <span className="font-semibold">{confidenceDisplay}</span>
+            </p>
+        )}
       </div>
 
       {/* Summary Section */}
@@ -60,11 +83,31 @@ export default function OverviewTab({ tender, eligibility }: OverviewTabProps) {
       <div className="bg-white p-6 rounded-lg border shadow-sm">
         <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
             <AlertOctagon className="w-5 h-5 text-red-600"/>
-            Risk Flags & Failed Clauses
+            Risk Flags
         </h3>
+
         {risks.length > 0 ? (
             <div className="space-y-3">
                 {risks.map((risk, idx) => (
+                    <div key={idx} className="p-3 bg-red-50 border border-red-100 rounded-md">
+                        <div className="flex justify-between items-start">
+                            <div className="font-medium text-red-800 mb-1">{risk.risk_type}</div>
+                            <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded ${
+                                risk.severity === 'high' ? 'bg-red-200 text-red-800' :
+                                risk.severity === 'medium' ? 'bg-orange-200 text-orange-800' :
+                                'bg-yellow-200 text-yellow-800'
+                            }`}>
+                                {risk.severity}
+                            </span>
+                        </div>
+                        <p className="text-sm text-red-700">{risk.clause}</p>
+                    </div>
+                ))}
+            </div>
+        ) : failedClauses.length > 0 ? (
+            // Fallback to legacy failed clauses if no structured risks
+             <div className="space-y-3">
+                {failedClauses.map((risk, idx) => (
                     <div key={idx} className="p-3 bg-red-50 border border-red-100 rounded-md">
                         <div className="font-medium text-red-800 mb-1">Clause {risk.clause_id}</div>
                         <p className="text-sm text-red-700">{risk.reason}</p>
@@ -73,7 +116,7 @@ export default function OverviewTab({ tender, eligibility }: OverviewTabProps) {
                 ))}
             </div>
         ) : (
-            <p className="text-gray-500 italic">No major risks or failed clauses detected.</p>
+            <p className="text-gray-500 italic">No major risks detected.</p>
         )}
       </div>
     </div>

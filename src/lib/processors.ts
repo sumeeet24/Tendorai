@@ -112,38 +112,57 @@ async function cleanupGCS(gcsInputPath: string, gcsOutputPrefix: string) {
 
 export async function evaluateEligibility(sections: any, companyProfile: any) {
     console.log('Evaluating Eligibility...')
+
+    const criteriaSections = `
+Eligibility Criteria:
+${sections['Eligibility Criteria'] || ''}
+
+Evaluation Criteria:
+${sections['Evaluation Criteria'] || ''}
+`
+
     const prompt = `
-You are an expert tender evaluator.
-Evaluate if the company is eligible for the tender based strictly on the provided criteria.
-
-Input Data:
-1. Eligibility Criteria: "${sections['Eligibility Criteria']}"
-2. Evaluation Criteria: "${sections['Evaluation Criteria']}"
-3. Company Profile: ${JSON.stringify(companyProfile)}
-
-Task:
-Determine eligibility and identify risks.
-
-Output JSON Structure:
-{
-  "eligible": boolean,
-  "reasons": string[],
-  "missing_requirements": string[],
-  "risk_flags": string[]
-}
+Compare company data strictly against tender eligibility criteria.
 
 Rules:
-- If company meets all criteria -> eligible: true
-- If ANY mandatory criteria is failed/missing -> eligible: false
-- Be strict but fair.
-- Use only provided information.
+- Do not infer beyond text.
+- If requirement not found, mark as unknown.
+- Provide evidence quotes.
+- Output JSON only.
+
+Return:
+{
+"eligible": true/false,
+"matched_requirements": [
+{
+"requirement": "",
+"evidence_from_company": "",
+"evidence_from_tender": ""
+}
+],
+"failed_requirements": [],
+"unknown_requirements": [],
+"confidence": "low|medium|high"
+}
+
+Tender Criteria:
+${criteriaSections}
+
+Company Data:
+${JSON.stringify(companyProfile)}
 `
     try {
         const result = await generateJSON(prompt)
         return result
     } catch (error) {
         console.error('Eligibility Evaluation Failed:', error)
-        return { eligible: false, reasons: ['AI evaluation failed'], missing_requirements: [], risk_flags: [] }
+        return {
+            eligible: false,
+            matched_requirements: [],
+            failed_requirements: ['AI evaluation failed'],
+            unknown_requirements: [],
+            confidence: 'low'
+        }
     }
 }
 
@@ -319,36 +338,36 @@ export async function processTender(job: ProcessPayload) {
         }
 
         // --- STEP 2: SECTION CLASSIFICATION ---
-        console.log('Classifying text into 12 categories...')
+        console.log('Classifying text into fixed categories...')
         const classificationPrompt = `
-You are a tender analyst.
+You are a deterministic tender classifier.
 
-Task: Classify the following tender text into 12 fixed categories.
-
-Structure:
-{
-  "Eligibility Criteria": "",
-  "Pre-Bid Meeting": "",
-  "Evaluation Criteria": "",
-  "Required Documents": "",
-  "Scope Of Work": "",
-  "EMD Fee": "",
-  "Relaxations": "",
-  "Payment Terms": "",
-  "BOQ Requirements": "",
-  "Risks": "",
-  "Redlining": "",
-  "Annexures": "",
-  "Uncategorized": ""
-}
+Classify the provided text into the following EXACT JSON structure.
 
 Rules:
+- Copy relevant text exactly.
 - Do NOT summarize.
 - Do NOT rewrite.
 - Do NOT infer.
-- Copy exact relevant text from the source.
-- If a category has no content, return empty string.
-- Output VALID JSON ONLY.
+- If no relevant content exists, return empty string.
+- Output strictly valid JSON.
+
+Schema:
+{
+"Eligibility Criteria": "",
+"Pre-Bid Meeting": "",
+"Evaluation Criteria": "",
+"Required Documents": "",
+"Scope Of Work": "",
+"EMD Fee": "",
+"Relaxations": "",
+"Payment Terms": "",
+"BOQ Requirements": "",
+"Risks": "",
+"Redlining": "",
+"Annexures": "",
+"Uncategorized": ""
+}
 
 Text:
 ${mergedFullText}
@@ -361,36 +380,122 @@ ${mergedFullText}
             throw new Error('Tender classification failed')
         }
 
-        // --- STEP 6: REQUIRED DOCUMENT EXTRACTION ---
+        // --- STEP 3: EXECUTIVE SUMMARY STAGE ---
+        console.log('Generating Executive Summary...')
+        const summarySections = `
+Scope Of Work:
+${sections["Scope Of Work"]}
+
+Eligibility Criteria:
+${sections["Eligibility Criteria"]}
+
+Evaluation Criteria:
+${sections["Evaluation Criteria"]}
+
+EMD Fee:
+${sections["EMD Fee"]}
+
+Pre-Bid Meeting:
+${sections["Pre-Bid Meeting"]}
+`
+        const summaryPrompt = `
+Generate an executive summary strictly from the provided sections.
+
+Constraints:
+- Do not invent data.
+- Do not add assumptions.
+- Only summarize what exists.
+- Highlight financial thresholds, key dates, and qualification requirements.
+- If data missing, do not fabricate.
+
+Sections:
+${summarySections}
+`
+        let summary = ''
+        try {
+            // Use generateText for summary as it is free-form text
+            summary = await generateText(summaryPrompt)
+        } catch (err) {
+            console.error('Summary Generation Failed:', err)
+            summary = "Summary generation failed."
+        }
+
+        // --- STEP 4: REQUIRED DOCUMENT EXTRACTION STAGE ---
         console.log('Extracting Required Documents...')
         const reqDocsPrompt = `
-From the text provided below (which is the "Required Documents" section of a tender), extract a structured list of documents.
+Extract only explicitly listed required submission documents.
+
+Rules:
+- Do not invent documents.
+- Only include documents clearly stated.
+- If none found, return empty array.
+- Preserve original clause in raw_clause field.
+
+Return JSON array:
+[
+{
+"name": "",
+"mandatory": true/false,
+"raw_clause": ""
+}
+]
 
 Text:
 ${sections['Required Documents'] || ''}
-
-Output JSON:
-[
-  {
-    "name": "Document Name",
-    "description": "Brief description or details",
-    "mandatory": true
-  }
-]
-
-If no documents found, return empty array.
 `
         let requiredDocuments: any[] = []
         try {
             requiredDocuments = await generateJSON(reqDocsPrompt)
         } catch (err) {
             console.error('Req Docs Extraction Failed:', err)
-            // Non-fatal, return empty
             requiredDocuments = []
         }
 
-        // --- STEP 3: STORE STRUCTURED STATE ---
-        // Fetch current to preserve anything if needed (though we mostly overwrite)
+        // --- STEP 5: RISK ANALYSIS STAGE ---
+        console.log('Analyzing Risks...')
+        const riskSections = `
+Risks:
+${sections["Risks"]}
+
+Payment Terms:
+${sections["Payment Terms"]}
+
+Redlining:
+${sections["Redlining"]}
+
+EMD Fee:
+${sections["EMD Fee"]}
+`
+        const riskPrompt = `
+Identify explicit financial, legal, or compliance risks.
+
+Rules:
+- Only use provided sections.
+- Do not speculate.
+- Extract exact clauses that represent risk.
+
+Return JSON:
+[
+{
+"risk_type": "",
+"clause": "",
+"severity": "low|medium|high"
+}
+]
+
+Input:
+${riskSections}
+`
+        let risks: any[] = []
+        try {
+            risks = await generateJSON(riskPrompt)
+        } catch (err) {
+            console.error('Risk Analysis Failed:', err)
+            risks = []
+        }
+
+        // --- STEP 6: STORE STRUCTURED STATE ---
+        // Fetch current to preserve anything if needed
         const { data: currentTender } = await supabase
             .from('tender_profiles')
             .select('metadata')
@@ -406,11 +511,13 @@ If no documents found, return empty array.
                     ...currentMetadata,
                     extracted_text: mergedFullText,
                     sections: sections,
+                    summary: summary,
                     required_documents: requiredDocuments,
+                    risks: risks,
                     eligibility_result: null // Reset eligibility as content changed
                 },
                 processed: true,
-                clauses: [] // Clear old clauses if any
+                clauses: [] // Clear old clauses
             })
             .eq('id', tender_id)
 
