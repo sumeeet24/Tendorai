@@ -9,7 +9,7 @@ interface FileUploadProps {
   label: string
   description?: string
   documentType: string
-  onUploadComplete: () => void
+  onUploadComplete: (data?: { documentId: string, fileUrl: string }) => void
   companyId: string
   ownerId: string
 }
@@ -101,14 +101,12 @@ export default function FileUpload({ label, description, documentType, onUploadC
       })
 
       if (!processRes.ok) {
-         // Log error but don't fail the upload completely if processing fails?
-         // Maybe just show warning.
          console.warn('Processing trigger failed', await processRes.text())
       }
 
       setStatus('success')
       setFile(null)
-      onUploadComplete()
+      onUploadComplete({ documentId: docData.id, fileUrl: filePath })
 
     } catch (err: any) {
       console.error(err)
