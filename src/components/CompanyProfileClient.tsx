@@ -64,7 +64,7 @@ export default function CompanyProfileClient({ profile, uploads, userId }: Props
         </div>
         <div className="flex items-center gap-2 rounded-lg bg-white px-4 py-2 shadow-sm ring-1 ring-zinc-200 dark:bg-zinc-900 dark:ring-zinc-800">
           <Building2 className="h-4 w-4 text-indigo-500" />
-          <span className="font-medium text-zinc-700 dark:text-zinc-200">{profile.name || 'Your Company'}</span>
+          <span className="font-medium text-zinc-700 dark:text-zinc-200">{profile.company_name || 'Your Company'}</span>
         </div>
       </div>
 

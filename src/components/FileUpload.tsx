@@ -138,7 +138,6 @@ export default function FileUpload({ label, documentType, onUploadComplete, owne
                         accept=".pdf"
                         onChange={handleFileChange}
                         className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
-                        disabled={status === 'uploading'}
                      />
                      <div className={clsx(
                          "flex h-8 w-8 items-center justify-center rounded-lg border shadow-sm transition-colors",
