@@ -11,63 +11,71 @@ export async function POST(req: Request) {
   }
 
   try {
-    const { message, tenderId, context } = await req.json()
+    const { message, tenderId } = await req.json()
+    const lowerMessage = message.toLowerCase()
 
     // Fetch context data
     const { data: tender } = await supabase.from('tender_profiles').select('*').eq('id', tenderId).single()
     const { data: company } = await supabase.from('company_profiles').select('*').eq('owner_id', user.id).single()
 
-    // Attempt to fetch legacy eligibility result, but we prefer metadata
-    const { data: legacyEligibility } = await supabase.from('eligibility_results').select('*').eq('tender_id', tenderId).single()
-
     if (!tender) return new NextResponse('Tender not found', { status: 404 })
 
     const metadata = tender.metadata as any || {}
     const sections = metadata.sections || {}
+    const summary = metadata.summary || ""
 
-    // Construct focused context from structured sections
-    const tenderContext = {
-        id: tender.id,
-        title: tender.title,
-        sections: sections,
-        required_documents: metadata.required_documents || []
+    // 1. Detect Keywords
+    let selectedContext = ""
+    let includeCompany = false
+
+    if (lowerMessage.includes('eligibility') || lowerMessage.includes('eligible') || lowerMessage.includes('qualify')) {
+        selectedContext = sections["Eligibility Criteria"] || ""
+        includeCompany = true
+    } else if (lowerMessage.includes('scope') || lowerMessage.includes('work') || lowerMessage.includes('project')) {
+        selectedContext = sections["Scope Of Work"] || ""
+    } else if (lowerMessage.includes('payment') || lowerMessage.includes('terms') || lowerMessage.includes('fee')) {
+        selectedContext = sections["Payment Terms"] || ""
+    } else if (lowerMessage.includes('document') || lowerMessage.includes('doc') || lowerMessage.includes('submit')) {
+        selectedContext = sections["Required Documents"] || "" // Note: This might be raw text or JSON if processed?
+        // metadata.sections['Required Documents'] stores the text content from the classification step.
+        // metadata.required_documents stores the extracted JSON.
+        // The prompt says "Section: <<<RELEVANT_SECTION>>>".
+        // Classification step stores *text* in sections['Required Documents'].
+        // So we use sections['Required Documents'].
+    } else if (lowerMessage.includes('risk') || lowerMessage.includes('liability') || lowerMessage.includes('penalty')) {
+        selectedContext = sections["Risks"] || ""
+    } else {
+        // Fallback or multiple?
+        // Spec says "Only send relevant section".
+        // If no keyword, maybe send Summary?
+        selectedContext = `Executive Summary:\n${summary}\n\n(Note: No specific section matched the query. Using summary.)`
     }
 
-    // Prefer metadata eligibility result, fallback to legacy table
-    const eligibilityContext = metadata.eligibility_result || legacyEligibility || null
+    // 2. Construct Prompt
+    let prompt = `
+Answer based only on the provided section.
+If answer not found in section, say information not available.
 
-    const systemPrompt = `
-You are an assistant for tender analysis.
-
-You are NOT allowed to:
-- Change data
-- Invent facts
-- Override eligibility decisions
-- Assume missing documents exist
-
-You MAY:
-- Explain eligibility results
-- Answer questions using provided data only
-- Suggest next actions
-- Draft text when explicitly requested
-
-Rules:
-- Reference clause IDs (if available in sections) and specifics
-- If information is missing, say "Information not available"
-- Never guess
-- Use the structured sections provided in the context for all reasoning.
-
-Context:
-Tender Profile: ${JSON.stringify(tenderContext)}
-Company Profile: ${JSON.stringify(company)}
-Eligibility Result: ${JSON.stringify(eligibilityContext)}
-UI State: ${JSON.stringify(context?.uiState || {})}
-
-User Message: ${message}
+Section:
+${selectedContext}
 `
 
-      const response = await generateText(systemPrompt)
-      return NextResponse.json({ response })
+    if (includeCompany && company) {
+        prompt += `
+Company Data:
+${JSON.stringify(company)}
+`
+    }
+
+    prompt += `
+User Question:
+${message}
+`
+
+    // 3. Call Gemini
+    const response = await generateText(prompt)
+    return NextResponse.json({ response })
+
   } catch (error) {
       console.error(error)
       return new NextResponse('AI Error', { status: 500 })

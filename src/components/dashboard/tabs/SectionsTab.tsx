@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react'
 import { TenderProfile, Section, TenderMetadata } from '@/types'
-import { ChevronDown, ChevronRight, FileText, AlertTriangle, CheckCircle, Search, Info } from 'lucide-react'
+import { ChevronDown, ChevronRight, FileText, AlertTriangle, CheckCircle, Search, Info, Loader2 } from 'lucide-react'
 
 interface SectionsTabProps {
   tender: TenderProfile
@@ -10,11 +10,13 @@ interface SectionsTabProps {
 
 export default function SectionsTab({ tender, onSectionSelect, selectedSectionKey }: SectionsTabProps) {
   const metadata = (tender.metadata || {}) as TenderMetadata
-  const sections = metadata.sections || {}
+  const sections = metadata.sections
+
   const [searchTerm, setSearchTerm] = useState('')
 
   // Convert sections object to array for easier rendering
   const sectionList = useMemo(() => {
+    if (!sections) return []
     return Object.entries(sections).map(([key, section]) => ({
       key,
       ...section
@@ -32,6 +34,16 @@ export default function SectionsTab({ tender, onSectionSelect, selectedSectionKe
         s.content.toLowerCase().includes(searchTerm.toLowerCase())
     )
   }, [sectionList, searchTerm])
+
+  // Guard Clause as per requirements
+  if (!sections || Object.keys(sections).length === 0) {
+      return (
+          <div className="flex flex-col items-center justify-center h-full text-gray-500">
+              <Loader2 className="w-8 h-8 animate-spin mb-2 text-indigo-600"/>
+              <p>Analyzing Sections...</p>
+          </div>
+      )
+  }
 
   const handleToggle = (key: string) => {
     if (selectedSectionKey === key) {
