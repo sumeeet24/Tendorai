@@ -7,7 +7,7 @@ import { createClient } from '@/lib/supabase/client'
 interface FileUploadProps {
   label: string
   documentType: 'financial' | 'certification' | 'experience' | 'oem' | 'other'
-  onUploadComplete: () => void
+  onUploadComplete: (data?: { documentId: string, fileUrl: string }) => void
   companyId: string | null // Actually, we can get user ID from auth, but companyId is usually user ID here.
   ownerId: string
 }
@@ -84,7 +84,7 @@ export default function FileUpload({ label, documentType, onUploadComplete, owne
 
       setStatus('success')
       setFile(null)
-      onUploadComplete()
+      onUploadComplete({ documentId: docData.id, fileUrl: filePath })
 
     } catch (err: any) {
       console.error(err)

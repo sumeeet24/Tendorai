@@ -53,3 +53,73 @@ export interface Job {
   created_at: string
   error?: string
 }
+
+// --- New Types ---
+
+export interface TenderProfile {
+  id: string
+  company_id: string
+  tender_name: string | null
+  tender_id_ref: string | null
+  opening_date: string | null
+  closing_date: string | null
+  source_pdf_url: string | null
+  clauses: any[]
+  metadata: TenderMetadata
+  processed: boolean
+  created_at: string
+}
+
+export interface TenderMetadata {
+  extracted_text?: string
+  summary?: string
+  sections?: Record<string, Section> // Key is section title or ID
+  required_documents?: RequiredDocument[]
+  eligibility_result?: EligibilityResult | null // Optional here as it might be stored in metadata too
+  risk_analysis?: any
+  drafts?: Record<string, Draft> // requirement_name -> Draft
+  uploads?: Record<string, UploadLink> // requirement_name -> UploadLink
+}
+
+export interface Section {
+  title: string
+  content: string
+  page_numbers: number[]
+  risk_level?: 'low' | 'medium' | 'high'
+  compliance_status?: 'compliant' | 'non_compliant' | 'review_needed'
+}
+
+export interface RequiredDocument {
+  name: string
+  description?: string
+  type?: string // 'financial', 'technical', etc.
+  mandatory?: boolean
+}
+
+export interface EligibilityResult {
+  id?: string // If from table
+  tender_id?: string
+  company_id?: string
+  status: 'ELIGIBLE' | 'NOT_ELIGIBLE' | 'PARTIAL' | 'PENDING'
+  failed_clauses: FailedClause[]
+  confidence: number
+  created_at?: string
+}
+
+export interface FailedClause {
+  clause_id: string
+  reason: string
+  text: string
+}
+
+export interface Draft {
+  title: string
+  content: string // HTML or Markdown
+  created_at: string
+}
+
+export interface UploadLink {
+  document_id: string
+  file_url: string
+  uploaded_at: string
+}
