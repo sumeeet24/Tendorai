@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
-import TenderAnalysisClient from '@/components/TenderAnalysisClient'
+import TenderIntelligenceDashboard from '@/components/dashboard/TenderIntelligenceDashboard'
 import { redirect } from 'next/navigation'
+import { TenderProfile, EligibilityResult } from '@/types'
 
 export default async function TenderPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -46,10 +47,10 @@ export default async function TenderPage({ params }: { params: Promise<{ id: str
     .single()
 
   return (
-    <TenderAnalysisClient
-        tender={tender}
+    <TenderIntelligenceDashboard
+        tender={tender as TenderProfile}
         company={company}
-        eligibility={eligibility}
+        eligibility={eligibility as EligibilityResult | null}
         userId={user.id}
     />
   )
