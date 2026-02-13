@@ -380,6 +380,38 @@ ${mergedFullText}
             throw new Error('Tender classification failed')
         }
 
+        // Rename Uncategorized to Additional Information Section
+        if (sections["Uncategorized"]) {
+            sections["Additional Information Section"] = sections["Uncategorized"];
+            delete sections["Uncategorized"];
+        }
+
+        // --- STEP 2.5: SECTION ANALYSIS ---
+        console.log('Analyzing Sections...')
+        const analysisPrompt = `
+You are a strategic tender analyst. Analyze the following tender sections.
+For each section, provide a high-level reasoning/summary and identify key points.
+
+Input Sections (JSON):
+${JSON.stringify(sections)}
+
+Output JSON Schema:
+{
+  "Section Name": {
+    "analysis": "High level reasoning...",
+    "key_points": ["point 1", "point 2"],
+    "risk_level": "low|medium|high"
+  }
+}
+`
+        let analysisResults: any = {}
+        try {
+            analysisResults = await generateJSON(analysisPrompt)
+        } catch (err) {
+            console.error('Section Analysis Failed:', err)
+            // Continue without analysis
+        }
+
         // --- STEP 3: EXECUTIVE SUMMARY STAGE ---
         console.log('Generating Executive Summary...')
         const summarySections = `
@@ -495,6 +527,20 @@ ${riskSections}
         }
 
         // --- STEP 6: STORE STRUCTURED STATE ---
+        // Combine text content with analysis
+        const finalSections: Record<string, any> = {}
+        for (const [key, content] of Object.entries(sections)) {
+            const analysis = analysisResults[key] || {}
+            finalSections[key] = {
+                title: key,
+                content: content,
+                analysis: analysis.analysis || "Analysis not available.",
+                key_points: analysis.key_points || [],
+                risk_level: analysis.risk_level || 'low',
+                page_numbers: []
+            }
+        }
+
         // Fetch current to preserve anything if needed
         const { data: currentTender } = await supabase
             .from('tender_profiles')
@@ -510,7 +556,7 @@ ${riskSections}
                 metadata: {
                     ...currentMetadata,
                     extracted_text: mergedFullText,
-                    sections: sections,
+                    sections: finalSections,
                     summary: summary,
                     required_documents: requiredDocuments,
                     risks: risks,
@@ -523,7 +569,7 @@ ${riskSections}
 
         console.log('Tender Profile Updated with Structured Data.')
 
-        return { success: true, message: 'Processing complete', sections }
+        return { success: true, message: 'Processing complete', sections: finalSections }
 
     } catch (err: any) {
         console.error('ProcessTender Failed:', err)
