@@ -29,7 +29,7 @@ export default async function TendersListPage() {
         {/* Header with Search and Action */}
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
             <div>
-                <h1 className="text-3xl font-bold tracking-tight text-gray-900">Dashboard</h1>
+                <h1 className="text-3xl font-bold tracking-tight text-gray-900">All Tenders</h1>
                 <p className="mt-2 text-lg text-gray-600">
                     Your active tender analysis projects.
                 </p>
