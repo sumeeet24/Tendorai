@@ -61,7 +61,7 @@ export default function DashboardClient({ profile, tenders, stats, userId }: Pro
     visible: {
       y: 0,
       opacity: 1,
-      transition: { type: 'spring', stiffness: 100 }
+      transition: { type: 'spring', stiffness: 100 } as any
     }
   }
 
