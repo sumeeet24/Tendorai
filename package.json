@@ -12,6 +12,7 @@
     "@google-cloud/documentai": "^9.5.0",
     "@google-cloud/storage": "^7.19.0",
     "@google/generative-ai": "^0.24.1",
+    "@headlessui/react": "^2.2.9",
     "@supabase/ssr": "^0.8.0",
     "@supabase/supabase-js": "^2.95.3",
     "@types/pg": "^8.16.0",
