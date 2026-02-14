@@ -18,7 +18,8 @@ import { createClient } from '@/lib/supabase/client'
 import clsx from 'clsx'
 
 const navigation = [
-  { name: 'Dashboard', href: '/tenders', icon: LayoutDashboard },
+  { name: 'Dashboard', href: '/', icon: LayoutDashboard },
+  { name: 'All Tenders', href: '/tenders', icon: FileText },
   { name: 'New Tender', href: '/tenders/new', icon: PlusCircle },
   { name: 'Company Profile', href: '/company', icon: Building2 },
 ]
@@ -52,7 +53,7 @@ export default function Sidebar({ isOpen, setIsOpen }: SidebarProps) {
       <div className="flex flex-1 flex-col overflow-y-auto">
         <nav className="flex-1 space-y-1 px-2 py-4">
           {navigation.map((item) => {
-            const isActive = pathname === item.href || (item.href !== '/tenders' && pathname.startsWith(item.href))
+            const isActive = pathname === item.href || (item.href !== '/' && item.href !== '/tenders' && pathname.startsWith(item.href))
             return (
               <Link
                 key={item.name}
