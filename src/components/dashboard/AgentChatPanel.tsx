@@ -97,7 +97,7 @@ export default function AgentChatPanel({ tender, eligibility, selectedSectionKey
       <div className="p-4 border-b bg-gradient-to-r from-gray-50 to-white flex items-center justify-between">
         <div className="flex items-center gap-3">
             <div className="relative">
-                <div className="w-10 h-10 rounded-xl bg-indigo-600 flex items-center justify-center shadow-lg shadow-indigo-200">
+                <div className="w-10 h-10 rounded-xl bg-brand-gradient flex items-center justify-center shadow-lg shadow-pink-200">
                     <Bot className="w-6 h-6 text-white"/>
                 </div>
                 <span className="absolute -bottom-1 -right-1 flex h-3 w-3">
@@ -106,9 +106,9 @@ export default function AgentChatPanel({ tender, eligibility, selectedSectionKey
                 </span>
             </div>
             <div>
-                <h2 className="font-bold text-gray-900 text-sm">AI Assistant</h2>
+                <h2 className="font-bold text-gray-900 text-sm">Qubit</h2>
                 <p className="text-[10px] text-gray-500 font-medium flex items-center gap-1">
-                   Ready to help
+                   Built by ARTINT<span className="text-blue-500">SER</span>
                 </p>
             </div>
         </div>
@@ -119,8 +119,8 @@ export default function AgentChatPanel({ tender, eligibility, selectedSectionKey
         {messages.map((msg, idx) => (
           <div key={idx} className={`flex gap-3 ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}>
             {/* Avatar */}
-             <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 shadow-sm border ${msg.role === 'user' ? 'bg-gray-100 border-gray-200' : 'bg-indigo-50 border-indigo-100'}`}>
-                {msg.role === 'user' ? <User className="w-4 h-4 text-gray-600"/> : <Sparkles className="w-4 h-4 text-indigo-600"/>}
+             <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 shadow-sm border ${msg.role === 'user' ? 'bg-gray-100 border-gray-200' : 'bg-pink-50 border-pink-100'}`}>
+                {msg.role === 'user' ? <User className="w-4 h-4 text-gray-600"/> : <Sparkles className="w-4 h-4 text-pink-600"/>}
             </div>
 
             {/* Bubble */}
@@ -132,7 +132,7 @@ export default function AgentChatPanel({ tender, eligibility, selectedSectionKey
                 {msg.role === 'user' ? (
                     <div className="whitespace-pre-wrap">{msg.content}</div>
                 ) : (
-                    <div className="prose prose-sm max-w-none prose-indigo prose-p:leading-relaxed prose-headings:font-bold prose-strong:font-bold prose-ul:list-disc prose-ul:pl-4">
+                    <div className="prose prose-sm max-w-none prose-pink prose-p:leading-relaxed prose-headings:font-bold prose-strong:font-bold prose-ul:list-disc prose-ul:pl-4">
                         <ReactMarkdown remarkPlugins={[remarkGfm]}>
                             {msg.content}
                         </ReactMarkdown>
@@ -148,14 +148,14 @@ export default function AgentChatPanel({ tender, eligibility, selectedSectionKey
 
         {loading && (
              <div className="flex gap-3">
-                <div className="w-8 h-8 rounded-full bg-indigo-50 border border-indigo-100 flex items-center justify-center flex-shrink-0">
-                    <Sparkles className="w-4 h-4 text-indigo-600"/>
+                <div className="w-8 h-8 rounded-full bg-pink-50 border border-pink-100 flex items-center justify-center flex-shrink-0">
+                    <Sparkles className="w-4 h-4 text-pink-600"/>
                 </div>
                 <div className="bg-white border border-gray-100 rounded-2xl rounded-tl-sm p-4 shadow-md flex items-center gap-3">
                     <div className="flex space-x-1">
-                        <div className="w-2 h-2 bg-indigo-400 rounded-full animate-bounce [animation-delay:-0.3s]"></div>
-                        <div className="w-2 h-2 bg-indigo-400 rounded-full animate-bounce [animation-delay:-0.15s]"></div>
-                        <div className="w-2 h-2 bg-indigo-400 rounded-full animate-bounce"></div>
+                        <div className="w-2 h-2 bg-pink-400 rounded-full animate-bounce [animation-delay:-0.3s]"></div>
+                        <div className="w-2 h-2 bg-pink-400 rounded-full animate-bounce [animation-delay:-0.15s]"></div>
+                        <div className="w-2 h-2 bg-pink-400 rounded-full animate-bounce"></div>
                     </div>
                     <span className="text-xs text-gray-500 font-medium">Analyzing...</span>
                 </div>
@@ -170,13 +170,13 @@ export default function AgentChatPanel({ tender, eligibility, selectedSectionKey
               <motion.div
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="mb-3 text-xs text-indigo-600 bg-indigo-50 border border-indigo-100 px-3 py-1.5 rounded-lg inline-flex items-center gap-2 shadow-sm"
+                className="mb-3 text-xs text-pink-600 bg-pink-50 border border-pink-100 px-3 py-1.5 rounded-lg inline-flex items-center gap-2 shadow-sm"
               >
                   <MessageSquare className="w-3.5 h-3.5"/>
                   <span className="font-medium">Context: Section {selectedSectionKey}</span>
               </motion.div>
           )}
-          <div className="relative flex items-end gap-2 border border-gray-200 rounded-2xl shadow-sm bg-gray-50/50 p-1.5 focus-within:ring-2 focus-within:ring-indigo-100 focus-within:border-indigo-400 focus-within:bg-white transition-all duration-200">
+          <div className="relative flex items-end gap-2 border border-gray-200 rounded-2xl shadow-sm bg-gray-50/50 p-1.5 focus-within:ring-2 focus-within:ring-pink-100 focus-within:border-pink-400 focus-within:bg-white transition-all duration-200">
             <textarea
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
@@ -188,7 +188,7 @@ export default function AgentChatPanel({ tender, eligibility, selectedSectionKey
             <button
                 onClick={handleSend}
                 disabled={!input.trim() || loading}
-                className="p-2.5 rounded-xl bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50 disabled:hover:bg-indigo-600 transition-all shadow-md hover:shadow-lg disabled:shadow-none mb-0.5 active:scale-95"
+                className="p-2.5 rounded-xl bg-brand-gradient text-white hover:opacity-90 disabled:opacity-50 transition-all shadow-md hover:shadow-lg disabled:shadow-none mb-0.5 active:scale-95"
             >
                 <Send className="w-4 h-4"/>
             </button>

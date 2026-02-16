@@ -87,9 +87,9 @@ export default function DashboardClient({ profile, tenders, stats, userId }: Pro
             <h1 className="text-3xl font-bold tracking-tight text-gray-900">
               Command Center
             </h1>
-            <span className="inline-flex items-center rounded-full bg-indigo-50 px-2.5 py-0.5 text-xs font-medium text-indigo-700 ring-1 ring-inset ring-indigo-700/10">
+            <span className="inline-flex items-center rounded-full bg-pink-50 px-2.5 py-0.5 text-xs font-medium text-pink-700 ring-1 ring-inset ring-pink-700/10">
               <Bot className="mr-1 h-3 w-3" />
-              AI Agent Active
+              Qubit Active
             </span>
           </div>
           <p className="text-lg text-gray-600">
@@ -156,21 +156,21 @@ export default function DashboardClient({ profile, tenders, stats, userId }: Pro
         <motion.div variants={itemVariants} className="lg:col-span-2 space-y-8">
 
           {/* Market Opportunity Widget (Mock) */}
-          <div className="bg-gradient-to-r from-indigo-600 to-purple-600 rounded-xl shadow-lg p-6 text-white relative overflow-hidden group">
+          <div className="bg-brand-gradient rounded-xl shadow-lg p-6 text-white relative overflow-hidden group">
             <div className="absolute top-0 right-0 -mt-10 -mr-10 w-40 h-40 bg-white opacity-10 rounded-full blur-2xl group-hover:scale-150 transition-transform duration-700"></div>
             <div className="relative z-10">
               <h2 className="text-xl font-bold flex items-center gap-2 mb-2">
                 <Globe className="h-5 w-5" />
                 Market Intelligence
               </h2>
-              <p className="text-indigo-100 mb-6 max-w-lg">
-                Our AI has detected 3 new high-value tenders matching your profile in the last 24 hours.
+              <p className="text-white/90 mb-6 max-w-lg">
+                Qubit has detected 3 new high-value tenders matching your profile in the last 24 hours.
               </p>
               <div className="flex gap-3">
-                <button className="bg-white text-indigo-600 px-4 py-2 rounded-lg text-sm font-semibold hover:bg-indigo-50 transition-colors shadow-sm">
+                <button className="bg-white text-purple-600 px-4 py-2 rounded-lg text-sm font-semibold hover:bg-gray-50 transition-colors shadow-sm">
                   View Opportunities
                 </button>
-                <button className="bg-indigo-500/30 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-indigo-500/40 transition-colors backdrop-blur-sm">
+                <button className="bg-white/20 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-white/30 transition-colors backdrop-blur-sm">
                   Dismiss
                 </button>
               </div>
@@ -184,7 +184,7 @@ export default function DashboardClient({ profile, tenders, stats, userId }: Pro
                  <Activity className="h-5 w-5 text-gray-400" />
                  Recent Activity
                </h3>
-               <Link href="/tenders" className="text-sm text-indigo-600 hover:text-indigo-500 font-medium">
+               <Link href="/tenders" className="text-sm text-pink-600 hover:text-pink-500 font-medium">
                  View All
                </Link>
              </div>
@@ -206,7 +206,7 @@ export default function DashboardClient({ profile, tenders, stats, userId }: Pro
                              {tender.processed ? <FileText className="h-5 w-5" /> : <Clock className="h-5 w-5 animate-pulse" />}
                            </div>
                            <div className="min-w-0">
-                             <p className="text-sm font-medium text-gray-900 truncate group-hover:text-indigo-600 transition-colors">
+                             <p className="text-sm font-medium text-gray-900 truncate group-hover:text-pink-600 transition-colors">
                                {tender.tender_name || tender.tender_id_ref || "Untitled Tender"}
                              </p>
                              <div className="flex items-center gap-2 mt-1">
@@ -230,7 +230,7 @@ export default function DashboardClient({ profile, tenders, stats, userId }: Pro
                                 <span className="text-xs font-medium">{tender.metadata.risks.length} Risks</span>
                               </div>
                             )}
-                            <ArrowRight className="h-4 w-4 text-gray-400 group-hover:text-indigo-500 transform group-hover:translate-x-1 transition-all" />
+                            <ArrowRight className="h-4 w-4 text-gray-400 group-hover:text-pink-500 transform group-hover:translate-x-1 transition-all" />
                          </div>
                        </div>
                      </Link>
@@ -244,14 +244,14 @@ export default function DashboardClient({ profile, tenders, stats, userId }: Pro
         {/* Right Column: AI Assistant & Tools */}
         <motion.div variants={itemVariants} className="space-y-6">
 
-           {/* AI Assistant Widget */}
-           <div className="bg-white rounded-xl shadow-lg ring-1 ring-gray-900/5 p-6 border-t-4 border-indigo-500">
+           {/* Qubit Widget */}
+           <div className="bg-white rounded-xl shadow-lg ring-1 ring-gray-900/5 p-6 border-t-4 border-pink-500">
               <div className="flex items-center gap-3 mb-4">
-                <div className="h-8 w-8 rounded-lg bg-indigo-100 flex items-center justify-center text-indigo-600">
+                <div className="h-8 w-8 rounded-lg bg-pink-100 flex items-center justify-center text-pink-600">
                   <Bot className="h-5 w-5" />
                 </div>
                 <div>
-                  <h3 className="font-semibold text-gray-900">AI Assistant</h3>
+                  <h3 className="font-semibold text-gray-900">Qubit</h3>
                   <p className="text-xs text-gray-500">Ask me anything about your tenders</p>
                 </div>
               </div>
@@ -262,12 +262,12 @@ export default function DashboardClient({ profile, tenders, stats, userId }: Pro
                   value={aiQuery}
                   onChange={(e) => setAiQuery(e.target.value)}
                   placeholder="e.g., Show high risk clauses..."
-                  className="block w-full rounded-lg border-0 py-3 pr-10 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6"
+                  className="block w-full rounded-lg border-0 py-3 pr-10 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-pink-600 sm:text-sm sm:leading-6"
                 />
                 <button
                   type="submit"
                   disabled={!aiQuery.trim()}
-                  className="absolute right-2 top-2 p-1.5 text-gray-400 hover:text-indigo-600 disabled:opacity-50 transition-colors"
+                  className="absolute right-2 top-2 p-1.5 text-gray-400 hover:text-pink-600 disabled:opacity-50 transition-colors"
                 >
                   <ArrowRight className="h-4 w-4" />
                 </button>
@@ -293,17 +293,17 @@ export default function DashboardClient({ profile, tenders, stats, userId }: Pro
                 Quick Actions
               </h3>
               <div className="grid grid-cols-2 gap-3">
-                <Link href="/tenders/new" className="flex flex-col items-center justify-center p-4 rounded-lg border border-gray-200 hover:border-indigo-500 hover:bg-indigo-50 transition-all group text-center">
-                  <Upload className="h-6 w-6 text-gray-400 group-hover:text-indigo-600 mb-2" />
-                  <span className="text-xs font-medium text-gray-700 group-hover:text-indigo-700">Upload Tender</span>
+                <Link href="/tenders/new" className="flex flex-col items-center justify-center p-4 rounded-lg border border-gray-200 hover:border-pink-500 hover:bg-pink-50 transition-all group text-center">
+                  <Upload className="h-6 w-6 text-gray-400 group-hover:text-pink-600 mb-2" />
+                  <span className="text-xs font-medium text-gray-700 group-hover:text-pink-700">Upload Tender</span>
                 </Link>
-                <Link href="/company" className="flex flex-col items-center justify-center p-4 rounded-lg border border-gray-200 hover:border-indigo-500 hover:bg-indigo-50 transition-all group text-center">
-                  <ShieldCheck className="h-6 w-6 text-gray-400 group-hover:text-indigo-600 mb-2" />
-                  <span className="text-xs font-medium text-gray-700 group-hover:text-indigo-700">Update Profile</span>
+                <Link href="/company" className="flex flex-col items-center justify-center p-4 rounded-lg border border-gray-200 hover:border-pink-500 hover:bg-pink-50 transition-all group text-center">
+                  <ShieldCheck className="h-6 w-6 text-gray-400 group-hover:text-pink-600 mb-2" />
+                  <span className="text-xs font-medium text-gray-700 group-hover:text-pink-700">Update Profile</span>
                 </Link>
-                <Link href="/tenders" className="flex flex-col items-center justify-center p-4 rounded-lg border border-gray-200 hover:border-indigo-500 hover:bg-indigo-50 transition-all group text-center">
-                  <Search className="h-6 w-6 text-gray-400 group-hover:text-indigo-600 mb-2" />
-                  <span className="text-xs font-medium text-gray-700 group-hover:text-indigo-700">Search All</span>
+                <Link href="/tenders" className="flex flex-col items-center justify-center p-4 rounded-lg border border-gray-200 hover:border-pink-500 hover:bg-pink-50 transition-all group text-center">
+                  <Search className="h-6 w-6 text-gray-400 group-hover:text-pink-600 mb-2" />
+                  <span className="text-xs font-medium text-gray-700 group-hover:text-pink-700">Search All</span>
                 </Link>
                 <div className="flex flex-col items-center justify-center p-4 rounded-lg border border-gray-200 bg-gray-50 opacity-60 cursor-not-allowed text-center">
                   <TrendingUp className="h-6 w-6 text-gray-400 mb-2" />
