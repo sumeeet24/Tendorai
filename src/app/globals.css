@@ -24,3 +24,12 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+@layer utilities {
+  .text-brand-gradient {
+    @apply bg-gradient-to-r from-pink-500 via-purple-500 to-cyan-500 bg-clip-text text-transparent;
+  }
+  .bg-brand-gradient {
+    @apply bg-gradient-to-r from-pink-500 via-purple-500 to-cyan-500;
+  }
+}

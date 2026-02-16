@@ -150,7 +150,7 @@ export default function CreateTenderForm({ companyId, userId }: Props) {
                       type="text"
                       id="tenderName"
                       required
-                      className="block w-full rounded-md border-0 py-1.5 pl-10 text-gray-900 ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6"
+                      className="block w-full rounded-md border-0 py-1.5 pl-10 text-gray-900 ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-pink-600 sm:text-sm sm:leading-6"
                       placeholder="e.g. Construction of New Highway Bridge"
                       value={formData.tenderName}
                       onChange={(e) => setFormData({ ...formData, tenderName: e.target.value })}
@@ -170,7 +170,7 @@ export default function CreateTenderForm({ companyId, userId }: Props) {
                       type="text"
                       id="tenderId"
                       required
-                      className="block w-full rounded-md border-0 py-1.5 pl-9 text-gray-900 ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6"
+                      className="block w-full rounded-md border-0 py-1.5 pl-9 text-gray-900 ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-pink-600 sm:text-sm sm:leading-6"
                       placeholder="T-2024-001"
                       value={formData.tenderId}
                       onChange={(e) => setFormData({ ...formData, tenderId: e.target.value })}
@@ -189,7 +189,7 @@ export default function CreateTenderForm({ companyId, userId }: Props) {
                      <input
                         type="datetime-local"
                         id="openingDate"
-                        className="block w-full rounded-md border-0 py-1.5 pl-9 text-gray-900 ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6"
+                        className="block w-full rounded-md border-0 py-1.5 pl-9 text-gray-900 ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-pink-600 sm:text-sm sm:leading-6"
                         value={formData.openingDate}
                         onChange={(e) => setFormData({ ...formData, openingDate: e.target.value })}
                       />
@@ -207,7 +207,7 @@ export default function CreateTenderForm({ companyId, userId }: Props) {
                      <input
                         type="datetime-local"
                         id="closingDate"
-                        className="block w-full rounded-md border-0 py-1.5 pl-9 text-gray-900 ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6"
+                        className="block w-full rounded-md border-0 py-1.5 pl-9 text-gray-900 ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-pink-600 sm:text-sm sm:leading-6"
                         value={formData.closingDate}
                         onChange={(e) => setFormData({ ...formData, closingDate: e.target.value })}
                       />
@@ -221,7 +221,7 @@ export default function CreateTenderForm({ companyId, userId }: Props) {
                     <div
                         className={clsx(
                             "mt-2 flex justify-center rounded-lg border border-dashed px-6 py-10 transition-colors",
-                            dragActive ? "border-indigo-500 bg-indigo-50" : "border-gray-900/25 hover:bg-gray-50"
+                            dragActive ? "border-pink-500 bg-pink-50" : "border-gray-900/25 hover:bg-gray-50"
                         )}
                         onDragEnter={handleDrag}
                         onDragLeave={handleDrag}
@@ -231,9 +231,9 @@ export default function CreateTenderForm({ companyId, userId }: Props) {
                         <div className="text-center">
                             {file ? (
                                 <div className="flex flex-col items-center">
-                                    <FileText className="mx-auto h-12 w-12 text-indigo-600" aria-hidden="true" />
+                                    <FileText className="mx-auto h-12 w-12 text-pink-600" aria-hidden="true" />
                                     <div className="mt-4 flex text-sm leading-6 text-gray-600">
-                                        <span className="font-semibold text-indigo-600 hover:text-indigo-500">
+                                        <span className="font-semibold text-pink-600 hover:text-pink-500">
                                             {file.name}
                                         </span>
                                     </div>
@@ -251,7 +251,7 @@ export default function CreateTenderForm({ companyId, userId }: Props) {
                                     <div className="mt-4 flex text-sm leading-6 text-gray-600 justify-center">
                                         <label
                                             htmlFor="file-upload"
-                                            className="relative cursor-pointer rounded-md bg-white font-semibold text-indigo-600 focus-within:outline-none focus-within:ring-2 focus-within:ring-indigo-600 focus-within:ring-offset-2 hover:text-indigo-500"
+                                            className="relative cursor-pointer rounded-md bg-white font-semibold text-pink-600 focus-within:outline-none focus-within:ring-2 focus-within:ring-pink-600 focus-within:ring-offset-2 hover:text-pink-500"
                                         >
                                             <span>Upload a file</span>
                                             <input id="file-upload" name="file-upload" type="file" className="sr-only" accept=".pdf" onChange={handleFileChange} />
@@ -293,7 +293,7 @@ export default function CreateTenderForm({ companyId, userId }: Props) {
                 <button
                     type="submit"
                     disabled={loading}
-                    className="inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 disabled:opacity-70 disabled:cursor-not-allowed"
+                    className="inline-flex items-center rounded-md bg-pink-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-pink-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-pink-600 disabled:opacity-70 disabled:cursor-not-allowed"
                 >
                     {loading ? (
                         <>

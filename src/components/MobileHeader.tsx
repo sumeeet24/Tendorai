@@ -11,7 +11,7 @@ export default function MobileHeader({ onOpenSidebar }: MobileHeaderProps) {
     <div className="sticky top-0 z-40 flex h-16 shrink-0 items-center gap-x-4 border-b border-gray-200 bg-white px-4 shadow-sm sm:gap-x-6 sm:px-6 lg:hidden">
       <button
         type="button"
-        className="-m-2.5 p-2.5 text-gray-700 lg:hidden hover:text-indigo-600 transition-colors"
+        className="-m-2.5 p-2.5 text-gray-700 lg:hidden hover:text-pink-600 transition-colors"
         onClick={onOpenSidebar}
       >
         <span className="sr-only">Open sidebar</span>
@@ -20,8 +20,8 @@ export default function MobileHeader({ onOpenSidebar }: MobileHeaderProps) {
 
       <div className="flex flex-1 items-center gap-x-4 self-stretch lg:gap-x-6">
         <div className="flex items-center gap-x-2">
-            <Bot className="h-6 w-6 text-indigo-600" />
-            <span className="text-lg font-bold text-gray-900 tracking-tight">TenderAI</span>
+            <Bot className="h-6 w-6 text-pink-600" />
+            <span className="text-lg font-bold tracking-tight text-brand-gradient">Qubit</span>
         </div>
       </div>
     </div>
